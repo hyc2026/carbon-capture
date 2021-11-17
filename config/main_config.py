@@ -2,7 +2,7 @@ from easydict import EasyDict
 from algorithms.model import Model
 
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 指定gpu_id
+# os.environ["CUDA_VISIBLE_DEVICES"] = "1"  # 指定gpu_id
 
 import torch
 
