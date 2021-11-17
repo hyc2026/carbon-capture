@@ -35,15 +35,17 @@
 ## 环境配置
 
 环境：
-python 3.8
-cuda 10.0
-torch 1.7.1
+- python 3.8
+- cuda 10.0
+- torch 1.7.1
 
 
+```bash
 conda create -n carbon python==3.8
 conda activate carbon
 pip install -r requirements.txt
 pip install pytorch==1.7.1  cudatoolkit=9.2 -c pytorch
+```
 
 
 ## 训练
