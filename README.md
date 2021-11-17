@@ -32,19 +32,19 @@
 
 每个agent的目标是尽可能获取最大的金额奖励（在`carbon_trainer_env.py`文件中计算），采用端到端的训练来生成该基线模型，供选手使用。
 
-## 快速开始
-创建并激活一个虚拟的Python环境
-```shell
-conda create -n carbon python==3.9
+## 环境配置
 
-conda activate carbon (OSx/Linux)
-activate carbon (Windows)
-```
+环境：
+python 3.8
+cuda 10.0
+torch 1.7.1
 
-安装依赖
-```shell
+
+conda create -n carbon python==3.8
+conda activate carbon
 pip install -r requirements.txt
-```
+pip install pytorch==1.7.1  cudatoolkit=9.2 -c pytorch
+
 
 ## 训练
 在 `config/main_config.py` 文件中修改超参数后并运行以下命令:
