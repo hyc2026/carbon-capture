@@ -44,7 +44,10 @@
 conda create -n carbon python==3.8
 conda activate carbon
 pip install -r requirements.txt
-pip install pytorch==1.7.1  cudatoolkit=9.2 -c pytorch
+# CUDA 10.0 (DGX-01)
+conda install pytorch==1.7.1  cudatoolkit=9.2 -c pytorch
+# if CUDA 10.1
+# conda install pytorch==1.7.0  cudatoolkit=10.1 -c pytorch
 ```
 
 
