@@ -138,7 +138,7 @@ class ObservationParser:
 
     def obs_transform(self, current_obs: Board, previous_obs: Board = None) -> Tuple[Dict, Dict, Dict]:
         """
-        通过前后两帧的原始观测状态值, 计算状态空间特征, agent dones信息以及agent可用的动作空间.
+        通过前后两帧的原始观测状态值, 计算状态空间特征, agent, dones信息以及agent可用的动作空间.
 
         特征维度包含:
             1) vector_feature：(一维特征, dim: 8)
