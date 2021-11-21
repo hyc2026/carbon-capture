@@ -11,7 +11,7 @@ from algorithms.base_policy import BasePolicy
 from envs.obs_parser import ObservationParser
 from utils.utils import to_tensor
 
-
+# 核心代码：policy
 class EvalPolicy(BasePolicy):
     """
     展示策略训练结果使用

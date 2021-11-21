@@ -5,7 +5,7 @@ import torch.nn as nn
 
 from utils.utils import init_
 
-
+# 核心代码：model
 class Model(nn.Module):
     def __init__(self, is_actor=True):
         super().__init__()

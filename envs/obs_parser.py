@@ -31,7 +31,7 @@ def one_hot_np(value: int, num_cls: int):
     ret[value] = 1
     return ret
 
-
+# 核心代码：observation
 class ObservationParser:
     """
     ObservationParser class is used to parse observation dict data and converted to observation tensor for training.
