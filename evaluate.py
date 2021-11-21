@@ -7,7 +7,7 @@ from zerosum_env.envs.carbon.helpers import *
 from algorithms.eval_policy import EvalPolicy
 
 try:
-    NUM_EPISODES = sys.argv[1]
+    NUM_EPISODES = int(sys.argv[1])
 except IndexError as e:
     print("没有指定测评轮数，使用默认值50")
     NUM_EPISODES = 50
@@ -15,7 +15,8 @@ except IndexError as e:
 if __name__ == '__main__':
 
     player = EvalPolicy()
-    player.restore(torch.load('./runs/run2/models/model_best.pth'))
+    model_path = './runs/run2/models/model_best.pth'
+    player.restore(torch.load(model_path))
 
     # function for testing agent
     def take_action(observation, configuration):
