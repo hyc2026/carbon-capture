@@ -1,3 +1,4 @@
+import time
 import torch
 from collections import Counter
 
@@ -12,11 +13,23 @@ except IndexError as e:
     print("没有指定测评轮数，使用默认值50")
     NUM_EPISODES = 50
 
+# 计算从start到现在花费的时间
+def time_cost(start):
+    cost = int(time.time() - start)
+    h = cost // 3600
+    m = (cost % 3600) // 60
+    print('')
+    print('cost %s hours %s mins' % (h, m))
+
+
 if __name__ == '__main__':
 
     player = EvalPolicy()
-    model_path = './runs/run2/models/model_best.pth'
+    # model_path = './runs/run2/models/model_best.pth'
+    model_path = '/sdb/v-bingwang/workspace/carbon_baseline_cuda/runs/run2/models/model_950.pth'
     player.restore(torch.load(model_path))
+
+    t0 = time.time()
 
     # function for testing agent
     def take_action(observation, configuration):
@@ -42,3 +55,4 @@ if __name__ == '__main__':
     r1, r2 = evaluate_agent()
     print("agent : {0}, random : {1}\n".format(r1, r2))
     print(f"Win Rate: {round(r1 / NUM_EPISODES, 4)}")
+    time_cost(t0)
