@@ -1,10 +1,16 @@
 import torch
+from collections import Counter
 
 from zerosum_env import evaluate
 from zerosum_env.envs.carbon.helpers import *
 
 from algorithms.eval_policy import EvalPolicy
 
+try:
+    NUM_EPISODES = sys.argv[1]
+except IndexError as e:
+    print("没有指定测评轮数，使用默认值50")
+    NUM_EPISODES = 50
 
 if __name__ == '__main__':
 
@@ -23,12 +29,15 @@ if __name__ == '__main__':
             agents=[take_action, "random"],
             configuration={"randomSeed": 1},
             debug=True,
-            num_episodes=100)  # default == 1
+            num_episodes=NUM_EPISODES)  # default == 1
         # measure the mean of rewards of two agents
-        rew_1 = sum([i[0] for i in rew]) / len(rew)
-        rew_2 = sum([i[1] for i in rew]) / len(rew)
-        return rew_1, rew_2
-        # return rew[0][0], rew[0][1]
+        # counter = Counter("win vs. loss")
+        # TODO: More rounds to evaluate?
+        win_round = list(filter(lambda x: x[0] > x[1], rew))
+        print(f"[Agent vs. Random]: {win_round}\n")
+        win_round_num = len(win_round)
+        return win_round_num, NUM_EPISODES - win_round_num
 
     r1, r2 = evaluate_agent()
-    print("agent : {0}, random : {1}".format(r1, r2))
+    print("agent : {0}, random : {1}\n".format(r1, r2))
+    print(f"Win Rate: {round(r1 / NUM_EPISODES, 4)}")
