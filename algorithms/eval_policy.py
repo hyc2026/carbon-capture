@@ -52,9 +52,11 @@ class EvalPolicy(BasePolicy):
         return action, log_prob
 
     def take_action(self, observation, configuration):
+        # todo: 这个地方只使用了当前step，上一步状态，可以探索多观察前面几步
         current_obs = Board(observation, configuration)
         previous_obs = self.previous_obs if current_obs.step > 0 else None
 
+        # 通过观察当前和历史状态，返回下一步候选状态集合
         agent_obs_dict, dones, available_actions_dict = self.obs_parser.obs_transform(current_obs, previous_obs)
         self.previous_obs = copy.deepcopy(current_obs)
 
@@ -64,6 +66,12 @@ class EvalPolicy(BasePolicy):
         actions, _ = self.get_actions(agent_obs, avail_actions)
         agent_actions = {agent_id: action.item() for agent_id, action in zip(agent_ids, actions)}
         command = self.to_env_commands(agent_actions)
+        # print(command)
+        # 这个地方返回一个cmd字典
+        # 类似这样
+        """
+        {'player-0-recrtCenter-0': 'RECPLANTER', 'player-0-worker-0': 'RIGHT', 'player-0-worker-5': 'DOWN', 'player-0-worker-6': 'DOWN', 'player-0-worker-7': 'RIGHT', 'player-0-worker-8': 'UP', 'player-0-worker-12': 'UP', 'player-0-worker-13': 'UP'}
+        """
 
         return command
 
