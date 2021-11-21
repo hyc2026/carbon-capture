@@ -65,6 +65,7 @@ def evaluate(environment, agents=[], configuration={}, steps=[], num_episodes=1,
     htmls = [[]] * num_episodes
     errors = [[]] * num_episodes
     for i in range(num_episodes):
+        print(f'round pk: {i}')
         last_state = e.run(agents)[-1]
         rewards[i] = [state.reward for state in last_state]
         jsons[i] = e.toJSON()

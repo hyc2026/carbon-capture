@@ -31,7 +31,7 @@ def one_hot_np(value: int, num_cls: int):
     ret[value] = 1
     return ret
 
-
+# 核心代码：observation
 class ObservationParser:
     """
     ObservationParser class is used to parse observation dict data and converted to observation tensor for training.
@@ -138,7 +138,7 @@ class ObservationParser:
 
     def obs_transform(self, current_obs: Board, previous_obs: Board = None) -> Tuple[Dict, Dict, Dict]:
         """
-        通过前后两帧的原始观测状态值, 计算状态空间特征, agent dones信息以及agent可用的动作空间.
+        通过前后两帧的原始观测状态值, 计算状态空间特征, agent, dones信息以及agent可用的动作空间.
 
         特征维度包含:
             1) vector_feature：(一维特征, dim: 8)
