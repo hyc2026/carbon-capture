@@ -37,9 +37,12 @@ class EvalPolicy(BasePolicy):
     def get_actions(self, observation, available_actions=None) -> Tuple[torch.Tensor, torch.Tensor]:
         obs = to_tensor(observation).to(**self.tensor_kwargs)
 
+        # 根据观察的状态，actor model 进行决策，生成每个 action 的logits
+        # actor model 就是我们训好的 model
         action_logits = self.actor_model(obs)
         if available_actions is not None:
             available_actions = to_tensor(available_actions).to(**self.tensor_kwargs)
+            # 如果在 available_actions 中已经屏蔽了一些 action, 那么将其 logits 设置为最小值
             action_logits[available_actions == 0] = torch.finfo(torch.float32).min
 
         action = action_logits.sort(dim=1, descending=True)[1][:, 0]  # 按照概率值倒排,选择最大概率位置的索引
@@ -63,6 +66,7 @@ class EvalPolicy(BasePolicy):
         agent_ids, agent_obs, avail_actions = zip(*[(agent_id, torch.from_numpy(obs_), available_actions_dict[agent_id])
                                                     for agent_id, obs_ in agent_obs_dict.items()])
 
+        # 返回计算出的概率最大的 action
         actions, _ = self.get_actions(agent_obs, avail_actions)
         agent_actions = {agent_id: action.item() for agent_id, action in zip(agent_ids, actions)}
         command = self.to_env_commands(agent_actions)
