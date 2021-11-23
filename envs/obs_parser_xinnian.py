@@ -1,6 +1,8 @@
 from typing import Dict, Tuple
 import numpy as np
 
+from zerosum_env import make, evaluate
+# from zerosum_env.envs.carbon.helpers import *
 from zerosum_env.envs.carbon.helpers import RecrtCenterAction, WorkerAction, Board
 
 
@@ -31,6 +33,7 @@ def one_hot_np(value: int, num_cls: int):
     ret[value] = 1
     return ret
 
+
 # 核心代码：observation
 class ObservationParser:
     """
@@ -50,72 +53,8 @@ class ObservationParser:
         self.tree_lifespan = tree_lifespan
         self.action_space = action_space
 
-    @property
-    def observation_cnn_shape(self) -> Tuple[int, int, int]:
-        """
-        状态空间中CNN特征的维度
-        :return: CNN状态特征的维度
-        """
-        return 13, 15, 15
-
-    @property
-    def observation_vector_shape(self) -> int:
-        """
-        状态空间中一维向量的维度
-        :return: 状态空间中一维向量的维度
-        """
-        return 8
-
-    @property
-    def observation_dim(self) -> int:
-        """
-        状态空间的总维度(cnn维度 + vector维度). CNN特征会被展平成一维, 跟vector特征合并返回.
-        :return: 状态空间的总维度
-        """
-        return 8 + 13 * 15 * 15
-
-    def _guess_previous_actions(self, previous_obs: Board, current_obs: Board) -> Dict:
-        """
-        基于连续两帧Board信息,猜测各个agent采用的动作(已经消失的agent,因无法准确估计,故忽略!)
-
-        :return:  字典, key为agent_id, value为Command或None
-        """
-        return_value = {}
-
-        previous_workers = previous_obs.workers if previous_obs is not None else {}
-        current_workers = current_obs.workers if current_obs is not None else {}
-
-        player_base_cmds = {player_id: BaseActions[0]
-                            for player_id in current_obs.players.keys()} if current_obs is not None else {}
-        total_worker_ids = set(previous_workers.keys()) | set(current_workers.keys())  # worker id列表
-        for worker_id in total_worker_ids:
-            previous_worker, worker = previous_workers.get(worker_id, None), current_workers.get(worker_id, None)
-            if previous_worker is not None and worker is not None:  # (连续两局存活) 移动/停留 动作
-                prev_pos = np.array([previous_worker.position.x, previous_worker.position.y])
-                curr_pos = np.array([worker.position.x, worker.position.y])
-
-                # 计算所有方向的可能位置 (防止越界问题)
-                next_all_positions = ((prev_pos + WorkerDirections) + self.grid_size) % self.grid_size
-                dir_index = (next_all_positions == curr_pos).all(axis=1).nonzero()[0].item()
-                cmd = WorkerActions[dir_index]
-
-                return_value[worker_id] = cmd
-            elif previous_worker is None and worker is not None:  # (首次出现) 招募 动作
-                if worker.is_collector:
-                    player_base_cmds[worker.player_id] = BaseActions[1]
-                elif worker.is_planter:
-                    player_base_cmds[worker.player_id] = BaseActions[2]
-            else:  # Agent已消失(因无法准确推断出动作), 忽略
-                pass
-
-        if current_obs is not None:  # 转换中心指令
-            for player_id, player in current_obs.players.items():
-                return_value[player.recrtCenter_ids[0]] = player_base_cmds[player_id]
-
-        return return_value
-
-    def _distance_feature(self, x, y) -> np.ndarray:
-        """
+    def distance_feature(self, x, y) -> np.ndarray:
+        """ 获取输入位置到地图任意位置需要的最小步数
         Calculate the minimum distance from current position to other positions on grid.
         :param x: position x
         :param y: position y
@@ -129,13 +68,14 @@ class ObservationParser:
         offset_distance_x = self.grid_size - delta_distance_x
         offset_distance_y = self.grid_size - delta_distance_y
         distance_x = np.where(delta_distance_x < offset_distance_x,
-                              delta_distance_x, offset_distance_x)
+                            delta_distance_x, offset_distance_x)
         distance_y = np.where(delta_distance_y < offset_distance_y,
-                              delta_distance_y, offset_distance_y)
+                            delta_distance_y, offset_distance_y)
         distance_map = distance_x + distance_y
 
         return distance_map
-
+    
+    
     def obs_transform(self, current_obs: Board, previous_obs: Board = None) -> Tuple[Dict, Dict, Dict]:
         """
         通过前后两帧的原始观测状态值, 计算状态空间特征, agent, dones信息以及agent可用的动作空间.
@@ -272,4 +212,125 @@ class ObservationParser:
                 dones[my_agent.id] = False
 
         return local_obs, dones, available_actions
+    
+    # 简化规则，只根据当前情况判断
+    def obs_transform_new(self, current_obs: Board):
+        available_actions = {}
+        my_player_id = current_obs.current_player_id
+        
+        
+        # 1 碳的分布 15x15
+        carbon_dis = np.zeros((self.grid_size, self.grid_size), dtype=np.float32)
+        
+        # 1x15x15 捕碳员位置
+        collector_feature = np.zeros_like(carbon_dis, dtype=np.float32)  # me: +1; opponent: -1
+        # 1x15x15 种树员位置
+        planter_feature = np.zeros_like(carbon_dis, dtype=np.float32)  # me: +1; opponent: -1
+        # 1x15x15 捕碳员携带的碳的数量
+        worker_carbon_feature = np.zeros_like(carbon_dis, dtype=np.float32)
+        # 1x15x15 树的分布，绝对值表示树的年龄
+        tree_feature = np.zeros_like(carbon_dis, dtype=np.float32)  # trees, me: +; opponent: -.
+        
+        for point, cell in current_obs.cells.items():
+            if cell.carbon > 0:
+                carbon_dis[point.x, point.y] = cell.carbon
+        # 2 当前轮数
+        step_now = current_obs.step
+        
+        # 3 敌我基地位置
+        my_base = None
+        op_base = None
+        for base_id, base in current_obs.recrtCenters.items():
+            # 判断当前基地是否是我方基地
+            is_myself = base.player_id == my_player_id
+            if is_myself:
+                my_base = (base.position.x, base.position.y)
+            else:
+                op_base = (base.position.x, base.position.y)
+                
+        # 4 敌我现金数量
+        my_cash, op_cash = current_obs.current_player.cash, current_obs.opponents[0].cash
+        
+        # 5 敌我捕碳员信息
+        my_collectors = []
+        op_collectors = []
+        my_planters = []
+        op_planters = []
+        
+        for worker_id, worker in current_obs.workers.items():
+            is_myself = worker.player_id == my_player_id
 
+            worker_x, worker_y = worker.position.x, worker.position.y
+            if is_myself:
+                if worker.is_collector:
+                    my_collectors.append((worker.id, worker_x, worker_y, worker.carbon))
+                    collector_feature[worker_x, worker_y] = 1.0
+                    worker_carbon_feature[worker_x, worker_y] = worker.carbon
+                else:
+                    my_planters.append(((worker.id, worker_x, worker_y, worker.carbon)))
+                    planter_feature[worker_x, worker_y] = 1.0
+            else:
+                if worker.is_collector:
+                    op_collectors.append((worker.id, worker_x, worker_y, worker.carbon))
+                    collector_feature[worker_x, worker_y] = -1.0
+                else:
+                    op_planters.append(((worker.id, worker_x, worker_y, worker.carbon)))
+                    planter_feature[worker_x, worker_y] = -1.0
+        
+        # 6 敌我树的分布
+        my_trees = []
+        op_trees = []
+        for tree in current_obs.trees.values():
+            if tree.player_id == my_player_id:
+                my_trees.append(tree.id, tree.position.x, tree.position.y, tree.age)
+                tree_feature[tree.position.x, tree.position.y] = tree.age
+            else:
+                op_trees.append(tree.id, tree.position.x, tree.position.y, tree.age)
+                tree_feature[tree.position.x, tree.position.y] = - tree.age
+        
+        
+        my_info = {
+            "base": my_base,
+            "cash": my_cash,
+            "collectors": my_collectors,
+            "planters": my_planters,
+            "trees": my_trees
+        }
+        
+        op_info = {
+            "base": op_base,
+            "cash": op_cash,
+            "collectors": op_collectors,
+            "planters": op_planters,
+            "trees": op_trees
+        }
+        map_info = {
+            "carbon": carbon_dis,
+            "tree_feature": tree_feature,
+            "collector_feature": collector_feature,
+            "planter_feature": planter_feature,
+            "worker_carbon_feature": worker_carbon_feature
+        }
+                
+        return map_info, step_now, my_info, op_info
+
+
+if __name__ == "__main__":
+    obs_parser = ObservationParser()
+    env = make("carbon", {"seed": 1234}, debug=True)
+    # 查看环境的各项参数
+    config = env.configuration
+
+    # 确定地图选手数(只能是2)
+    num_agent = 2
+
+    # 获取自身初始观测状态并查看
+    obs = env.reset(num_agent)[0].observation
+
+    # 将obs转换为Board类从而更好获取信息
+    board = Board(obs, config)
+    map_info, step_now, my_info, op_info = obs_parser.obs_transform(board)
+    print("map info:\n", map_info)
+    print("Step:", step_now)
+    print("My Info:\n", my_info)
+    print("Op Info:\n", op_info)
