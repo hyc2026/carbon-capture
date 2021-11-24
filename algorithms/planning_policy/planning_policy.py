@@ -7,23 +7,17 @@ import copy
 from abc import ABC, ABCMeta, abstractmethod
 from typing import Dict, OrderedDict, Tuple
 
-import torch
 from algorithms.base_policy import BasePolicy
-from algorithms.model import Model
 from envs.obs_parser_xinnian import (BaseActions, ObservationParser,
                                      WorkerActions)
-from icecream import ic
-from torch.distributions import Categorical
-from utils.utils import to_tensor
 from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter,
-                                             RecrtCenterAction)
+                                             RecrtCenterAction, WorkerAction)
 
 
 class BasePlan(ABC):
     #这里的source_agent,target都是对象，而不是字符串
     #source: collector,planter,recrtCenter
-
     #target: collector,planter,recrtCenter,cell
     def __init__(self, source_agent, target, planning_policy):
         self.source_agent = source_agent
@@ -42,7 +36,7 @@ class RecrtCenterPlan(BasePlan):
 
 
 #CUSTOM:根据策略随意修改
-class PlanterGoToAndPlantTreeAtTreeAtPlan(RecrtCenterPlan):
+class RecrtCenterPlan(RecrtCenterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -100,7 +94,7 @@ class PlanterPlan(BasePlan):
 
 
 #CUSTOM:根据策略随意修改
-class PlanterGoToAndPlantTreeAtTreeAtPlan(RecrtCenterPlan):
+class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -114,17 +108,22 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(RecrtCenterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            self.preference_index = self.planning_policy.config[
-                'enabled_plans']['RecrtCenterSpawnPlanterPlan'][
-                    'preference_factor']
+            source_posotion=self.source_agent.position
+            target_position=self.target.position
+            distance = self.planning_policy.get_distance(source_posotion[0],source_posotion[1],target_position[0],target_position[1])
+            
+            self.preference_index = self.target.carbon * self.planning_policy.config[
+                'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
+                    'cell_carbon_weight']
 
     def get_actual_plant_cost(self):
-        configuration = self.game_state['configuration']
+        configuration = self.planning_policy.game_state['configuration']
 
-        if len( self.game_state['our_player'].tree_ids ) == 0:
-            return configuration.recPlanterCost  
+        if len(self.planning_policy.game_state['our_player'].tree_ids) == 0:
+            return configuration.recPlanterCost
         else:
-            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase ** self.game_state['board'].tree_ids.__len__()
+            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
+                'board'].tree_ids.__len__()
 
     def check_validity(self):
         #没有开启
@@ -147,7 +146,23 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(RecrtCenterPlan):
 
     #暂时还没发现这个action有什么用，感觉直接用command就行了
     def translate_to_action(self):
-        return RecrtCenterAction.RECPLANTER
+        if self.source_agent.cell == self.target:
+            return None
+        else:
+            old_position = self.source_agent.cell.position
+            old_distance = self.planning_policy.get_distance(
+                old_position[0], old_position[1], self.target.position[0],
+                self.target.position[1])
+
+            for move in WorkerAction.moves():
+                new_position = self.source_agent.cell.position + move.to_point(
+                )
+                new_distance = self.planning_policy.get_distance(
+                    new_position[0], new_position[1], self.target.position[0],
+                    self.target.position[1])
+
+                if new_distance < old_distance:
+                    return move
 
 
 class PlanningPolicy(BasePolicy):
@@ -165,9 +180,13 @@ class PlanningPolicy(BasePolicy):
                 #Planter plans
                 'PlanterGoToAndPlantTreeAtTreeAtPlan': {
                     'enabled': True,
-                    'preference_factor': 100
+                    'cell_carbon_weight': 0,
+                    'distance_weight':1
                 }
+                
             },
+            'row_count': 15,
+            'column_count': 15,
             'mask_preference_index': -1e9
         }
         self.game_state = object()
@@ -179,6 +198,14 @@ class PlanningPolicy(BasePolicy):
             'opponent_player':
             None  #carbon.helpers.Player class from board field
         }
+
+    #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
+    #mod self.config['column_count]
+    def get_distance(self, x1, y1, x2, y2):
+        return (x1 - x2 +
+                self.config['row_count']) % self.config['row_count'] + (
+                    y1 - y2 +
+                    self.config['column_count']) % self.config['column_count']
 
     @staticmethod
     def to_env_commands(policy_actions: Dict[str, int]) -> Dict[str, str]:
@@ -207,18 +234,23 @@ class PlanningPolicy(BasePolicy):
         for cell_id, cell in board.cells.items():
             # iterate over all collectors planters and recrtCenter of currnet
             # player
-            for worker_id, worker in board.collectors.items():
+            for collector in self.game_state['our_player'].collectors:
                 pass
-            for recrtCenter_id, recrtCenter in board.recrtCenters.items():
+
+            for planter in self.game_state['our_player'].planters:
+                plan = (PlanterGoToAndPlantTreeAtTreeAtPlan(
+                    planter, cell, self))
+                plans.append(plan)
+            for recrtCenter in self.game_state['our_player'].recrtCenters:
                 #TODO:动态地load所有的recrtCenterPlan类
-                plan = PlanterGoToAndPlantTreeAtTreeAtPlan(
-                    recrtCenter, cell, self)
-                if plan.preference_index != self.config[
-                        'mask_preference_index']:
-                    plans.append(plan)
-                pass
+                plan = RecrtCenterPlan(recrtCenter, cell, self)
+                plans.append(plan)
             pass
         pass
+        plans = [
+            plan for plan in plans
+            if plan.preference_index != self.config['mask_preference_index']
+        ]
         return plans
 
     def parse_observation(self, observation, configuration):
