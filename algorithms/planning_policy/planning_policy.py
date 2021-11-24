@@ -14,9 +14,10 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter,
                                              RecrtCenterAction, WorkerAction)
 
+
 # Plan是一个Agent行动的目标，它可以由一个Action完成(比如招募捕碳者），也可以由多
 # 个Action完成（比如种树者走到一个地方去种树）
-# 
+#
 # 我们的方法是对每个Agent用我们设计的优先级函数选出最好的Plan，然后对每个Agent把这个Plan翻译成(当前最好的)Action
 class BasePlan(ABC):
     #这里的source_agent,target都是对象，而不是字符串
@@ -25,8 +26,8 @@ class BasePlan(ABC):
     def __init__(self, source_agent, target, planning_policy):
         self.source_agent = source_agent
         self.target = target
-        self.planning_policy = planning_policy 
-        self.preference_index = None #这个Plan的优先级因子
+        self.planning_policy = planning_policy
+        self.preference_index = None  #这个Plan的优先级因子
 
     #根据Plan生成Action
     @abstractmethod
@@ -38,6 +39,7 @@ class BasePlan(ABC):
 class RecrtCenterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
+
 
 # 这个Plan是指转化中心招募种树者
 class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
@@ -54,9 +56,17 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            self.preference_index = self.planning_policy.config[
-                'enabled_plans']['RecrtCenterSpawnPlanterPlan'][
-                    'preference_factor']
+            #TODO 使用配置，而不是常数，这里肯定要改
+            if self.planning_policy.game_state['our_player'].cash - 20 * len(
+                    self.planning_policy.game_state['our_player'].planters
+            ) * 4 + 5 * len(
+                    self.planning_policy.game_state['our_player'].trees) < 30:
+                self.preference_index = self.preference_index = self.planning_policy.config[
+                    'mask_preference_index']
+            else:
+                self.preference_index = self.planning_policy.config[
+                    'enabled_plans']['RecrtCenterSpawnPlanterPlan'][
+                        'preference_index']
 
     def check_validity(self):
         #没有开启
@@ -76,10 +86,6 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         if self.planning_policy.game_state[
                 'our_player'].cash < self.planning_policy.game_state[
                     'configuration']['recPlanterCost']:
-            return False
-        #数量达到上限
-        if self.planning_policy.game_state['our_player'].planters.__len__(
-        ) >= self.planning_policy.game_state['configuration']['planterLimit']:
             return False
         return True
 
@@ -104,15 +110,14 @@ class PlanterPlan(BasePlan):
             return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
                 'board'].trees.__len__()
 
-    def get_tree_absorb_carbon_speed_at_cell(self,cell:Cell):
+    def get_tree_absorb_carbon_speed_at_cell(self, cell: Cell):
         pass
-        
+
 
 class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
-
 
     def calculate_score(self):
         if self.check_validity() == False:
@@ -125,12 +130,11 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
 
-            self.preference_index = self.target.carbon * self.planning_policy.config[
+            self.preference_index = self.target.down.carbon * self.planning_policy.config[
                 'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
                     'cell_carbon_weight'] + distance * self.planning_policy.config[
                         'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
                             'cell_distance_weight']
-
 
     def check_validity(self):
         #没有开启
@@ -181,7 +185,6 @@ class PlanningPolicy(BasePolicy):
        什么时候种: 一直种
        去哪种: 整张地图上碳最多的位置
     '''
-
     def __init__(self):
         super().__init__()
         #这里是策略的晁灿
@@ -190,7 +193,7 @@ class PlanningPolicy(BasePolicy):
                 #recrtCenter plans
                 'RecrtCenterSpawnPlanterPlan': {
                     'enabled': True,
-                    'preference_factor': 100
+                    'preference_index': 100
                 },
                 #Planter plans
                 'PlanterGoToAndPlantTreeAtTreeAtPlan': {
@@ -212,7 +215,6 @@ class PlanningPolicy(BasePolicy):
             'opponent_player':
             None  #carbon.helpers.Player class from board field
         }
-
 
     #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
     #mod self.config['column_count]
@@ -283,13 +285,17 @@ class PlanningPolicy(BasePolicy):
     def possible_plans_to_plans(self, possible_plans: BasePlan):
         #TODO:解决plan之间的冲突,比如2个种树者要去同一个地方种树，现在的plan选择
         #方式是不解决冲突
-        source_agent_id_plan_dict={}
+        source_agent_id_plan_dict = {}
         for possible_plan in possible_plans:
-            if possible_plan.source_agent.id not in source_agent_id_plan_dict: 
-                source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
+            if possible_plan.source_agent.id not in source_agent_id_plan_dict:
+                source_agent_id_plan_dict[
+                    possible_plan.source_agent.id] = possible_plan
             else:
-                if source_agent_id_plan_dict[possible_plan.source_agent.id].preference_index < possible_plan.preference_index:
-                    source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
+                if source_agent_id_plan_dict[
+                        possible_plan.source_agent.
+                        id].preference_index < possible_plan.preference_index:
+                    source_agent_id_plan_dict[
+                        possible_plan.source_agent.id] = possible_plan
         return source_agent_id_plan_dict.values()
 
     #被上层调用的函数
@@ -307,17 +313,17 @@ class PlanningPolicy(BasePolicy):
         """
         def remove_none_action_actions(plan_action_dict):
             return {
-                k: enum_v.value
-                for k, enum_v in plan_action_dict.items() if enum_v is not None
+                k: v['action'].value
+                for k, v in plan_action_dict.items() if v['action'] is not None
             }
 
-        plan_action_dict = {
-            plan.source_agent.id: plan.translate_to_action()
+        plan_dict = {
+            plan.source_agent.id: {
+                'action': plan.translate_to_action(),
+                'plan': plan
+            }
             for plan in plans
         }
-        clean_plan_action_value_dict = remove_none_action_actions(
-            plan_action_dict)
-        plan_action_dict = remove_none_action_actions(plan_action_dict)
-
-        command_list = self.to_env_commands(plan_action_dict)
+        clean_plan_id_action_value_dict = remove_none_action_actions(plan_dict)
+        command_list = self.to_env_commands(clean_plan_id_action_value_dict)
         return command_list
