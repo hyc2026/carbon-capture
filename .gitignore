@@ -3,6 +3,7 @@
 .vscode
 .idea
 .sourcetrail
+.ipynb_checkpoints/
 
 runs/
 tmp/
