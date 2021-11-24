@@ -36,7 +36,7 @@ class RecrtCenterPlan(BasePlan):
 
 
 #CUSTOM:根据策略随意修改
-class RecrtCenterPlan(RecrtCenterPlan):
+class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -92,6 +92,18 @@ class PlanterPlan(BasePlan):
         yes_it_is = isinstance(self.source_agent, Planter)
         return yes_it_is
 
+    def get_actual_plant_cost(self):
+        configuration = self.planning_policy.game_state['configuration']
+
+        if len(self.planning_policy.game_state['our_player'].tree_ids) == 0:
+            return configuration.recPlanterCost
+        else:
+            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
+                'board'].trees.__len__()
+
+    def get_tree_absorb_carbon_speed_at_cell(self,cell:Cell):
+        pass
+        
 
 #CUSTOM:根据策略随意修改
 class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
@@ -108,22 +120,18 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            source_posotion=self.source_agent.position
-            target_position=self.target.position
-            distance = self.planning_policy.get_distance(source_posotion[0],source_posotion[1],target_position[0],target_position[1])
-            
+            source_posotion = self.source_agent.position
+            target_position = self.target.position
+            distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], target_position[0],
+                target_position[1])
+
             self.preference_index = self.target.carbon * self.planning_policy.config[
                 'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
-                    'cell_carbon_weight']
+                    'cell_carbon_weight'] + distance * self.planning_policy.config[
+                        'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
+                            'cell_distance_weight']
 
-    def get_actual_plant_cost(self):
-        configuration = self.planning_policy.game_state['configuration']
-
-        if len(self.planning_policy.game_state['our_player'].tree_ids) == 0:
-            return configuration.recPlanterCost
-        else:
-            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
-                'board'].tree_ids.__len__()
 
     def check_validity(self):
         #没有开启
@@ -166,6 +174,18 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
 
 
 class PlanningPolicy(BasePolicy):
+    '''
+    这个版本的机器人只能够发出两种指令:
+    1. 基地招募种树者
+       什么时候种: 钱多树多种树者少(这种情况下资金不能得到有效利用)。 cash > 5
+       *( 3 *
+       tree_count - 2 * planter_count)
+       planter_count * 
+
+    2. 种树者走到一个地方种树
+       什么时候种: 一直种
+       去哪种: 整张地图上碳最多的位置
+    '''
 
     #输入:
     def __init__(self):
@@ -180,10 +200,9 @@ class PlanningPolicy(BasePolicy):
                 #Planter plans
                 'PlanterGoToAndPlantTreeAtTreeAtPlan': {
                     'enabled': True,
-                    'cell_carbon_weight': 0,
-                    'distance_weight':1
+                    'cell_carbon_weight': 1,
+                    'cell_distance_weight': -7
                 }
-                
             },
             'row_count': 15,
             'column_count': 15,
@@ -243,7 +262,7 @@ class PlanningPolicy(BasePolicy):
                 plans.append(plan)
             for recrtCenter in self.game_state['our_player'].recrtCenters:
                 #TODO:动态地load所有的recrtCenterPlan类
-                plan = RecrtCenterPlan(recrtCenter, cell, self)
+                plan = RecrtCenterSpawnPlanterPlan(recrtCenter, cell, self)
                 plans.append(plan)
             pass
         pass
@@ -265,13 +284,14 @@ class PlanningPolicy(BasePolicy):
     def possible_plans_to_plans(self, possible_plans: BasePlan):
         #TODO:解决plan之间的冲突,比如2个种树者要去同一个地方种树，现在的plan选择
         #方式是不解决冲突
-        plans = []
-        plan_source_agents = set()
+        source_agent_id_plan_dict={}
         for possible_plan in possible_plans:
-            if possible_plan.source_agent not in plan_source_agents:
-                plans.append(possible_plan)
-                plan_source_agents.add(possible_plan.source_agent)
-        return plans
+            if possible_plan.source_agent.id not in source_agent_id_plan_dict: 
+                source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
+            else:
+                if source_agent_id_plan_dict[possible_plan.source_agent.id].preference_index < possible_plan.preference_index:
+                    source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
+        return source_agent_id_plan_dict.values()
 
     def take_action(self, observation, configuration):
         self.parse_observation(observation, configuration)
@@ -284,8 +304,19 @@ class PlanningPolicy(BasePolicy):
         """
         {'player-0-recrtCenter-0': 'RECPLANTER', 'player-0-worker-0': 'RIGHT', 'player-0-worker-5': 'DOWN', 'player-0-worker-6': 'DOWN', 'player-0-worker-7': 'RIGHT', 'player-0-worker-8': 'UP', 'player-0-worker-12': 'UP', 'player-0-worker-13': 'UP'}
         """
-        command_list = self.to_env_commands({
-            plan.source_agent.id: plan.translate_to_action().value
+        def remove_none_action_actions(plan_action_dict):
+            return {
+                k: enum_v.value
+                for k, enum_v in plan_action_dict.items() if enum_v is not None
+            }
+
+        plan_action_dict = {
+            plan.source_agent.id: plan.translate_to_action()
             for plan in plans
-        })
+        }
+        clean_plan_action_value_dict = remove_none_action_actions(
+            plan_action_dict)
+        plan_action_dict = remove_none_action_actions(plan_action_dict)
+
+        command_list = self.to_env_commands(plan_action_dict)
         return command_list
