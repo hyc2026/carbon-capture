@@ -25,12 +25,12 @@ class BasePlan():
 
     #target: collector,planter,recrtCenter,cell
     def __init__(self, source_agent, target,
-                 planning_polisy: BasePolicy):
+                 planning_policy):
         self.source_agent = source_agent
         self.target = target
-        self.planning_polisy = planning_polisy
+        self.planning_policy = planning_policy
         self.preference_index = None
-
+    
     def translate_to_actions(self):
         pass
 
@@ -40,17 +40,17 @@ class BasePlan():
 
 
 class RecrtCenterPlan(BasePlan):
-    def __init__(self, source_agent,  target):
-        super().__init__(source_agent,  target)
+    def __init__(self, source_agent,  target,planning_policy):
+        super().__init__(source_agent,  target,planning_policy)
 
     def check_valid(self):
-        yes_it_is = issubclass(self.source_agent, RecrtCenter)
+        yes_it_is = isinstance(self.source_agent, RecrtCenter)
         return yes_it_is
 
 
 class PlanterPlan(BasePlan):
-    def __init__(self, source_agent,  target):
-        super().__init__(source_agent,  target)
+    def __init__(self, source_agent,  target,planning_policy):
+        super().__init__(source_agent,  target,planning_policy)
 
     def check_source_agent_is_planter(self):
         yes_it_is = issubclass(self.source_agent, Planter)
@@ -58,9 +58,12 @@ class PlanterPlan(BasePlan):
 
 
 #CUSTOM:根据策略随意修改；但要注意最好
-class RecrtCenterSpawnPlanterPlan(BasePlan):
-    def __init__(self, source_agent,  target):
-        super().__init__(source_agent, target)
+class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
+    def __init__(self, source_agent,  target,planning_policy):
+        super().__init__(source_agent, target,planning_policy)
+        self.calculate_score()
+
+
 
     #CUSTOM:根据策略随意修改
     #计算转化中心生产种树者的倾向分数
@@ -68,28 +71,27 @@ class RecrtCenterSpawnPlanterPlan(BasePlan):
     def calculate_score(self):
         #is valid
         if self.check_validity() == False:
-            return self.planning_polisy.config['mask_preference_index']
+            return self.planning_policy.config['mask_preference_index']
         else:
             return self.planning_policy.config['enabled_plans'][
                 'RecrtCenterSpawnPlanterPlan']['preference_factor']
 
     def check_validity(self):
-        if self.planning_polisy.config['enabled_plans'][
+        if self.planning_policy.config['enabled_plans'][
                 'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
             return False
         if not super().check_valid():
             return False
-        if self.planning_polisy.game_state[
-                'our_player'].cash < self.planning_polisy.game_state[
-                    'configuration']['planter_cost']:
+        if self.planning_policy.game_state[
+                'our_player'].cash < self.planning_policy.game_state[
+                    'configuration']['recPlanterCost']:
             return False
-        if self.planning_polisy.game_state[
-                'our_player'].planter_count >= self.planning_polisy.game_state[
-                    'configuration']['planter_count_limit']:
+        if self.planning_policy.game_state['our_player'].planters.__len__() >= self.planning_policy.game_state[
+                    'configuration']['planterLimit']:
             return False
         return True
 
-    def translate_to_actions(self, planning_policy: BasePolicy):
+    def translate_to_actions(self, planning_policy):
 
         pass
 
@@ -113,7 +115,7 @@ class PlanningPolicy(BasePolicy):
         self.game_state = {
             'board': None,
             'observation': None,
-            'configurations': None,
+            'configuration': None,
             'our_player': None,  #carbon.helpers.Player class from board field
             'opponent_player':
             None  #carbon.helpers.Player class from board field
@@ -125,22 +127,22 @@ class PlanningPolicy(BasePolicy):
         for cell_id, cell in board.cells.items():
             # iterate over all collectors planters and recrtCenter of currnet
             # player
-            for worker in board.collectors:
+            for worker_id,worker in board.collectors.items():
                 pass
-            for recrtCenter in board.recrtCenters:
+            for recrtCenter_id,recrtCenter in board.recrtCenters.items():
                 #TODO:动态地load所有的recrtCenterPlan类
-                plans=plans+(RecrtCenterSpawnPlanterPlan(recrtCenter,cell))
+                plans.append(RecrtCenterSpawnPlanterPlan(recrtCenter,cell,self))
                 pass
         return None
 
     def parse_observation(self, observation, configuration):
         self.game_state['observation'] = observation
-        self.game_state['configurations'] = configuration
+        self.game_state['configuration'] = configuration
         self.game_state['board'] = Board(observation, configuration)
         self.game_state['our_player'] = self.game_state['board'].players[
-            self.game_state['board']['current_player_id']]
+            self.game_state['board'].current_player_id]
         self.game_state['opponent_player'] = self.game_state['board'].players[
-            1 - ['current_player_id']]
+            1 - self.game_state['board'].current_player_id]
 
     def take_action(self, observation, configuration):
         self.parse_observation(observation, configuration)
