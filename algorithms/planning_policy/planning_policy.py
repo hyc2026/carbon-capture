@@ -14,35 +14,39 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter,
                                              RecrtCenterAction, WorkerAction)
 
-
+# Plan是一个Agent行动的目标，它可以由一个Action完成(比如招募捕碳者），也可以由多
+# 个Action完成（比如种树者走到一个地方去种树）
+# 
+# 我们的方法是对每个Agent用我们设计的优先级函数选出最好的Plan，然后对每个Agent把这个Plan翻译成(当前最好的)Action
 class BasePlan(ABC):
     #这里的source_agent,target都是对象，而不是字符串
-    #source: collector,planter,recrtCenter
-    #target: collector,planter,recrtCenter,cell
+    #source: 实施这个Plan的Agent: collector,planter,recrtCenter
+    #target: 被实施这个Plan的对象: collector,planter,recrtCenter,cell
     def __init__(self, source_agent, target, planning_policy):
         self.source_agent = source_agent
         self.target = target
-        self.planning_policy = planning_policy
-        self.preference_index = None
+        self.planning_policy = planning_policy 
+        self.preference_index = None #这个Plan的优先级因子
 
+    #根据Plan生成Action
     @abstractmethod
     def translate_to_action(self):
         pass
 
 
+# 这个类是由转化中心实施的Plans
 class RecrtCenterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
 
-
-#CUSTOM:根据策略随意修改
+# 这个Plan是指转化中心招募种树者
 class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
 
     #CUSTOM:根据策略随意修改
-    #计算转化中心生产种树者的倾向分数
+    #计算转化中心生产种树者的优先级因子
     #当前策略是返回PlanningPolicy中设定的固定值或者一个Mask(代表关闭，值为负无穷)
     def calculate_score(self):
         #is valid
@@ -79,7 +83,6 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
             return False
         return True
 
-    #暂时还没发现这个action有什么用，感觉直接用command就行了
     def translate_to_action(self):
         return RecrtCenterAction.RECPLANTER
 
@@ -105,17 +108,13 @@ class PlanterPlan(BasePlan):
         pass
         
 
-#CUSTOM:根据策略随意修改
 class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
 
-    #CUSTOM:根据策略随意修改
-    #计算转化中心生产种树者的倾向分数
-    #当前策略是返回PlanningPolicy中设定的固定值或者一个Mask(代表关闭，值为负无穷)
+
     def calculate_score(self):
-        #is valid
         if self.check_validity() == False:
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
@@ -152,7 +151,6 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             return False
         return True
 
-    #暂时还没发现这个action有什么用，感觉直接用command就行了
     def translate_to_action(self):
         if self.source_agent.cell == self.target:
             return None
@@ -177,19 +175,16 @@ class PlanningPolicy(BasePolicy):
     '''
     这个版本的机器人只能够发出两种指令:
     1. 基地招募种树者
-       什么时候种: 钱多树多种树者少(这种情况下资金不能得到有效利用)。 cash > 5
-       *( 3 *
-       tree_count - 2 * planter_count)
-       planter_count * 
+       什么时候招募:  有钱就招募
 
     2. 种树者走到一个地方种树
        什么时候种: 一直种
        去哪种: 整张地图上碳最多的位置
     '''
 
-    #输入:
     def __init__(self):
         super().__init__()
+        #这里是策略的晁灿
         self.config = {
             'enabled_plans': {
                 #recrtCenter plans
@@ -208,7 +203,7 @@ class PlanningPolicy(BasePolicy):
             'column_count': 15,
             'mask_preference_index': -1e9
         }
-        self.game_state = object()
+        #存储游戏中的状态，配置
         self.game_state = {
             'board': None,
             'observation': None,
@@ -217,6 +212,7 @@ class PlanningPolicy(BasePolicy):
             'opponent_player':
             None  #carbon.helpers.Player class from board field
         }
+
 
     #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
     #mod self.config['column_count]
@@ -247,6 +243,7 @@ class PlanningPolicy(BasePolicy):
                 env_commands[agent_id] = command
         return env_commands
 
+    #计算出所有合法的Plan
     def make_possible_plans(self):
         plans = []
         board = self.game_state['board']
@@ -272,6 +269,7 @@ class PlanningPolicy(BasePolicy):
         ]
         return plans
 
+    #把Board,Observation,Configuration变量的信息存到PlanningPolicy中
     def parse_observation(self, observation, configuration):
         self.game_state['observation'] = observation
         self.game_state['configuration'] = configuration
@@ -281,6 +279,7 @@ class PlanningPolicy(BasePolicy):
         self.game_state['opponent_player'] = self.game_state['board'].players[
             1 - self.game_state['board'].current_player_id]
 
+    #从合法的Plan中为每一个Agent选择一个最优的Plan
     def possible_plans_to_plans(self, possible_plans: BasePlan):
         #TODO:解决plan之间的冲突,比如2个种树者要去同一个地方种树，现在的plan选择
         #方式是不解决冲突
@@ -293,6 +292,8 @@ class PlanningPolicy(BasePolicy):
                     source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
         return source_agent_id_plan_dict.values()
 
+    #被上层调用的函数
+    #所有规则为这个函数所调用
     def take_action(self, observation, configuration):
         self.parse_observation(observation, configuration)
         possible_plans = self.make_possible_plans()
