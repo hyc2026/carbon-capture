@@ -40,13 +40,9 @@ class RecrtCenterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
 
-    def check_valid(self):
-        yes_it_is = isinstance(self.source_agent, RecrtCenter)
-        return yes_it_is
 
-
-#CUSTOM:根据策略随意修改；但要注意最好
-class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
+#CUSTOM:根据策略随意修改
+class PlanterGoToAndPlantTreeAtTreeAtPlan(RecrtCenterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -70,7 +66,7 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
                 'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
             return False
         #类型不对
-        if not super().check_valid():
+        if not isinstance(self.source_agent, RecrtCenter):
             return False
         if not isinstance(self.target, Cell):
             return False
@@ -94,6 +90,66 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         return RecrtCenterAction.RECPLANTER
 
 
+class PlanterPlan(BasePlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+
+    def check_valid(self):
+        yes_it_is = isinstance(self.source_agent, Planter)
+        return yes_it_is
+
+
+#CUSTOM:根据策略随意修改
+class PlanterGoToAndPlantTreeAtTreeAtPlan(RecrtCenterPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+
+    #CUSTOM:根据策略随意修改
+    #计算转化中心生产种树者的倾向分数
+    #当前策略是返回PlanningPolicy中设定的固定值或者一个Mask(代表关闭，值为负无穷)
+    def calculate_score(self):
+        #is valid
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            self.preference_index = self.planning_policy.config[
+                'enabled_plans']['RecrtCenterSpawnPlanterPlan'][
+                    'preference_factor']
+
+    def get_actual_plant_cost(self):
+        configuration = self.game_state['configuration']
+
+        if len( self.game_state['our_player'].tree_ids ) == 0:
+            return configuration.recPlanterCost  
+        else:
+            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase ** self.game_state['board'].tree_ids.__len__()
+
+    def check_validity(self):
+        #没有开启
+        if self.planning_policy.config['enabled_plans'][
+                'PlanterGoToAndPlantTreeAtTreeAtPlan']['enabled'] == False:
+            return False
+        #类型不对
+        if not isinstance(self.source_agent, Planter):
+            return False
+        if not isinstance(self.target, Cell):
+            return False
+        if self.target.tree is not None:
+            return False
+
+        #钱不够
+        if self.planning_policy.game_state[
+                'our_player'].cash < self.get_actual_plant_cost():
+            return False
+        return True
+
+    #暂时还没发现这个action有什么用，感觉直接用command就行了
+    def translate_to_action(self):
+        return RecrtCenterAction.RECPLANTER
+
+
 class PlanningPolicy(BasePolicy):
 
     #输入:
@@ -103,6 +159,11 @@ class PlanningPolicy(BasePolicy):
             'enabled_plans': {
                 #recrtCenter plans
                 'RecrtCenterSpawnPlanterPlan': {
+                    'enabled': True,
+                    'preference_factor': 100
+                },
+                #Planter plans
+                'PlanterGoToAndPlantTreeAtTreeAtPlan': {
                     'enabled': True,
                     'preference_factor': 100
                 }
@@ -150,7 +211,8 @@ class PlanningPolicy(BasePolicy):
                 pass
             for recrtCenter_id, recrtCenter in board.recrtCenters.items():
                 #TODO:动态地load所有的recrtCenterPlan类
-                plan = RecrtCenterSpawnPlanterPlan(recrtCenter, cell, self)
+                plan = PlanterGoToAndPlantTreeAtTreeAtPlan(
+                    recrtCenter, cell, self)
                 if plan.preference_index != self.config[
                         'mask_preference_index']:
                     plans.append(plan)
