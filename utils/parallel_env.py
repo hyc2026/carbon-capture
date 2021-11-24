@@ -39,6 +39,11 @@ class ParallelEnv(gym.Env):
             remote.close()
 
     def reset(self, selfplay=False):
+        """
+        并行计算envs中所有env(: CarbonTrainerEnv)调用reset函数的结果，作为一个list返回
+          调用env.reset时传入参数为 None
+        如果selfpaly为True，会拆分为[player1 envs reset outputs : list, player2 envs reset outputs :list]返回
+        """
         self.selfplay = selfplay
         players = [None, None] if self.selfplay else None
         for local in self.locals:
@@ -49,6 +54,7 @@ class ParallelEnv(gym.Env):
         if self.selfplay:  # 拆分出player1, player2的数据
             total_outputs = [[v[i] for v in total_outputs] for i, _ in enumerate(total_outputs[0])]
         # results = {key: [d[key] for d in total_outputs] for key in total_outputs[0]}  # list dict to dict list
+        
         return total_outputs
 
     def step(self, actions):

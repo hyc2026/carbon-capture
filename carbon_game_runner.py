@@ -138,13 +138,16 @@ class CarbonGameRunner:
             if no games end.
         :return collect_log: (Dict[str, List]) the statistical data of the transitions data
         """
-        # 开始时 self._env_output 是重置环境的输出
+        # 开始时 self._env_output 是重置环境的输出，
         env_outputs = self._env_output if self.selfplay else [self._env_output]  # policy first, then env
         # env_outputs: [[agent_id, obs(state), info, available_actions]]
+        # env_outputs 里面包含了每个agent的id、特征、可执行的动作、获得的reward(非init)，也包括了整个env的reward(非init)
 
         policy_outputs = []
-        for policy_id, env_output in enumerate(env_outputs):   # 对于每一个agent
-            current_policy = self.policies[policy_id]  # 当前智能体的policy (NN的参数)
+        
+        for policy_id, env_output in enumerate(env_outputs): # 这里枚举每一个player的env_output
+            
+            current_policy = self.policies[policy_id]  # 当前player对应的policy (NN的参数)
             policy_output = self.policy_actions_values(current_policy, env_output)  # 策略输出结果
 
             if current_policy.can_sample_trajectory():  # 添加以作为训练数据
@@ -155,10 +158,12 @@ class CarbonGameRunner:
         policy_outputs = {key: [d[key] for d in policy_outputs] for key in policy_outputs[0]}  # env first, then policy
 
         # a(t) -> r(t), S(t+1), done(t+1)
+        # 解析策略输出，令env按照commands运行一步(游戏进行一个回合)，并得到运行之后新的env_outputs
         env_commands = self.to_env_commands(policy_outputs)
         raw_env_output = self.env.step(env_commands)
         env_outputs = raw_env_output if self.selfplay else [raw_env_output]
-
+        
+        # env_outputs 是一个list，大小为(2 if selfpaly else 1, n_threads)
         for policy_id, env_output_ in enumerate(env_outputs):
             current_policy = self.policies[policy_id]
             if current_policy.can_sample_trajectory():  # 添加以作为训练数据
@@ -223,6 +228,7 @@ class CarbonGameRunner:
             env_policy_outputs = policy_outputs[env_id]  #
 
             policy_commands = []
+            
             for output in env_policy_outputs:  # for each policy's output
                 commands = LearnerPolicy.to_env_commands({agent_id: agent_value.action.item()
                                                           for agent_id, agent_value in output.items()})

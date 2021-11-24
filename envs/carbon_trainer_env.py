@@ -78,7 +78,9 @@ class CarbonTrainerEnv:
 
         self.previous_obs = None
         self.current_obs = Board(my_state.observation, self.configuration)
+        
         self.previous_commands.clear()
+        # 此时current_obs就是最初始的地图状态
 
         my_output = self._parse_observation_and_reward(my_state, opponent_state,
                                                        self.current_obs, None,
@@ -99,15 +101,20 @@ class CarbonTrainerEnv:
         if isinstance(commands, dict):
             commands = [commands, None]
         self.previous_commands = commands
-
+        
+        # 运行传入的commands
         self._env.step(commands)
 
+        # 得到当前的state
         my_state, opponent_state = self._get_latest_state()  # 当前轮次
 
         self.previous_obs = self.current_obs
         self.current_obs = Board(my_state.observation, self.configuration)
 
         my_output = self._parse_observation_and_reward(my_state, opponent_state, self.current_obs, self.previous_obs)
+        # 包含
+        # agent_id、obs、info、available_actions、done、reward，都为list，表示每个agent的各种信息
+        # env_reward # 游戏总金额的变化
 
         if self._env.selfplay:
             self.previous_opponent_obs = self.current_opponent_obs
@@ -125,8 +132,13 @@ class CarbonTrainerEnv:
         """
         计算Observation特征以及各个Agent的reward
         """
+
         # 解析observation生成observation特征
+        # agent_obs : dict(str, features), 每个agent对应的features，features是一个一维向量
+        # dons: dict(str, bool), 表示agent还是否活着
+        # available_actions: dict(str, array(5)), 表示每个agent的可执行动作，5个维度默认均为1
         agent_obs, dones, available_actions = self.observation_parser.obs_transform(current_obs, previous_obs)
+
 
         output = defaultdict(list)
         for agent_id, obs in agent_obs.items():
@@ -179,8 +191,8 @@ class CarbonTrainerEnv:
                 raise Exception("Should not go to here!")
 
         # 工人信息
-        my_player = current_obs.players[current_obs.current_player_id]  # 本轮次
-        my_base_position = my_player.recrtCenters[0].position
+        my_player = current_obs.players[current_obs.current_player_id]  # 本轮次当前玩家的工人信息
+        my_base_position = my_player.recrtCenters[0].position 
         my_workers = {worker.id: worker for worker in my_player.workers}
         previous_my_player = previous_obs.players[previous_obs.current_player_id]  # 上一轮次
         previous_my_workers = {worker.id: worker for worker in previous_my_player.workers}
@@ -201,6 +213,7 @@ class CarbonTrainerEnv:
             for tree_id in new_tree_ids:
                 tree = current_trees[tree_id]
                 tree_owner, _ = my_state.observation.trees[tree_id]
+                # tree owner 表示是哪个种树员种的树
                 if tree.age == 1:  # 种树
                     worker_plant_cost[tree_owner] += plant_cost if is_first_tree else plant_market_price
                 else:  # 抢树
@@ -301,6 +314,7 @@ class CarbonTrainerEnv:
         if normalize:
             agent_reward_dict = {k: self._normalize_reward(v)
                                  for k, v in agent_reward_dict.items()}
+        
         return env_reward, agent_reward_dict
 
     def _normalize_reward(self, reward):
