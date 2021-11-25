@@ -56,24 +56,30 @@ class CarbonGameRunner:
         self._trajectory_buffer.reset()
 
         best_model_threshold = None  # 筛选最佳策略使用
+        # 运行self.episodes(1000)局游戏，每局游戏300回合
         for episode in range(self.start_episode, self.episodes):
 
             for policy in self.policies:  # 重置策略
                 policy.policy_reset(episode, self.episodes)
 
             # collect transitions of whole game. S(0), a(0), r(0), dones(1) -> ... -> S(T), r(T-1), dones(T)
+            # 收集整局游戏的log，每局包含n_threads个env，每个env运行300回合
             experiences, collect_logs = self.collect_full_episode()  # 收集训练数据
 
             for experience_data in experiences:
                 self._replay_buffer.append(experience_data)
 
             # PPO training
+            # 根据这局游戏的训练数据训练模型
             train_logs = self.learner_policy.train(self._replay_buffer)
 
             self._replay_buffer.reset()  # drop training data
 
             # save state
             v = collect_logs['env_return']
+            # 根据这局游戏的env_return，判断best model
+            # 这里的v是这局游戏每个env满足游戏结束条件时的cash收益的平均值
+            # 这里每个env的cash收益考虑了对局的胜负状态，如果赢了会有300的reward奖励，输了会有-300的惩罚
             if best_model_threshold is None or v >= best_model_threshold:  # save best model
                 self.save(episode, is_best=True)
                 best_model_threshold = v
@@ -114,15 +120,20 @@ class CarbonGameRunner:
         """
         return_data = []
         collect_logs = defaultdict(list)
+        # n_threads个env均运行300回合，收集运行中的log
         for step in range(self.episode_length):
 
+            # 运行一个回合得到运行结果
             experience_data, collect_log = self._collect()
-
+            # 判断当前回合内哪个env(thread)的游戏满足结束条件了，就把log加入loglist
+            # 当某个env(thread)的游戏满足结束条件时，不停止游戏，而是继续让游戏运行下去，如果再次满足结束条件就再次把log加入loglist，直到300回合
             if experience_data:  # add to replay buffer
                 return_data.append(experience_data)
 
                 for key, value in collect_log.items():
                     collect_logs[key].extend(value)
+        # 这里len(collect_logs[k]) = len(return_data) >= n_threads，是300回合内n_threads个env满足结束条件的次数
+        print(collect_logs['env_return'])
         collect_logs = {k: np.mean(v) for k, v in collect_logs.items()}
         return return_data, collect_logs
 
@@ -173,6 +184,7 @@ class CarbonGameRunner:
             if current_policy == self.learner_policy:
                 for env_id, env_out in enumerate(env_output_):
                     self._env_returns[env_id] += env_out['env_reward']
+                    print(f"env_id: {env_id}, env_out: {env_out['env_reward']}, env_tot_reward: {self._env_returns[env_id]}")
 
         return_data, collect_log = [], defaultdict(list)
 
@@ -200,6 +212,7 @@ class CarbonGameRunner:
 
                 if current_policy == self.learner_policy:  # 仅收集训练策略的统计数据
                     collect_log['env_return'].append(self._env_returns[env_id])  # 环境结束,奖励总和
+                    print(env_id, self._env_returns[env_id])
                     self._env_returns[env_id] = 0.0
 
                     collect_log['accumulate_agent_count'].append(len(policy_data))

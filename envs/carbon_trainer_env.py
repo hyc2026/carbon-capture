@@ -222,6 +222,8 @@ class CarbonTrainerEnv:
         # 下面计算单个agent的reward
         max_reward = self.max_step
         agent_reward_dict = {}  # 单个agent的reward, key: worker_id (含已死亡), value: 智能体reward
+
+        # 游戏结束时，会根据结束时的状态计算reward，如果输了会添加-300的惩罚、赢了会有正300的奖励
         if game_end_code is not None:  # 游戏结束(注意: 游戏结束时,返回的current_cash不准确;未结束时,才准确!!!)
             env_reward = game_end_code * max_reward
         else:  # 游戏未结束
