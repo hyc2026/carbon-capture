@@ -1,6 +1,6 @@
 from zerosum_env import make, InvalidArgument, Agent
 from zerosum_env.core import act_agent
-
+from algorithms.planning_policy.planning_policy import PlanningPolicy
 
 class AgentRunner:
     def __init__(self, env, agents):
@@ -43,8 +43,8 @@ class CarbonEnv:
 
         self.my_index = None
         self.opponent_index = None
-
-        self.players = [None, "random"]
+        plan_policy = PlanningPolicy()
+        self.players = [None, plan_policy.take_action]
 
         self.reset(self.players)
 

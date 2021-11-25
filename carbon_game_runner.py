@@ -133,7 +133,7 @@ class CarbonGameRunner:
                 for key, value in collect_log.items():
                     collect_logs[key].extend(value)
         # 这里len(collect_logs[k]) = len(return_data) >= n_threads，是300回合内n_threads个env满足结束条件的次数
-        print(collect_logs['env_return'])
+        # print(collect_logs['env_return'])
         collect_logs = {k: np.mean(v) for k, v in collect_logs.items()}
         return return_data, collect_logs
 
@@ -184,7 +184,7 @@ class CarbonGameRunner:
             if current_policy == self.learner_policy:
                 for env_id, env_out in enumerate(env_output_):
                     self._env_returns[env_id] += env_out['env_reward']
-                    print(f"env_id: {env_id}, env_out: {env_out['env_reward']}, env_tot_reward: {self._env_returns[env_id]}")
+                    # print(f"env_id: {env_id}, env_out: {env_out['env_reward']}, env_tot_reward: {self._env_returns[env_id]}")
 
         return_data, collect_log = [], defaultdict(list)
 
@@ -212,7 +212,7 @@ class CarbonGameRunner:
 
                 if current_policy == self.learner_policy:  # 仅收集训练策略的统计数据
                     collect_log['env_return'].append(self._env_returns[env_id])  # 环境结束,奖励总和
-                    print(env_id, self._env_returns[env_id])
+                    # print(env_id, self._env_returns[env_id])
                     self._env_returns[env_id] = 0.0
 
                     collect_log['accumulate_agent_count'].append(len(policy_data))
