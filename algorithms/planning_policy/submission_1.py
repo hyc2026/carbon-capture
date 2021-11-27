@@ -102,6 +102,8 @@ WorkerDirections = np.stack([np.array((0, 0)),
 
 
 
+
+
 # Plan是一个Agent行动的目标，它可以由一个Action完成(比如招募捕碳者），也可以由多
 # 个Action完成（比如种树者走到一个地方去种树）
 #
@@ -163,6 +165,11 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         #位置不对
         if self.source_agent.cell != self.target:
             return False
+
+        #人口已满
+        if self.planning_policy.game_state['our_player'].planters.__len__() + self.planning_policy.game_state['our_player'].collectors.__len__() >= 10:
+            return False
+
         #钱不够
         if self.planning_policy.game_state[
                 'our_player'].cash < self.planning_policy.game_state[
@@ -201,14 +208,16 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
     def check_validity(self):
         #没有开启
         if self.planning_policy.config['enabled_plans'][
-                'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
+                'RecrtCenterSpawnCollectorPlan']['enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
             return False
         if not isinstance(self.target, Cell):
             return False
-
+        #人口已满
+        if self.planning_policy.game_state['our_player'].planters.__len__() + self.planning_policy.game_state['our_player'].collectors.__len__() >= 10:
+            return False
         #位置不对
         if self.source_agent.cell != self.target:
             return False
@@ -446,7 +455,13 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
                 return False
             if self.source_agent.carbon > self.planning_policy.config['collector_config']['gohomethreshold']:
                 return False
-            
+            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            source_posotion = self.source_agent.position
+            source_center_distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], center_position[0],
+                center_position[1])
+            if source_center_distance >= 300 - self.planning_policy.game_state['board'].step - 4:
+                return False           
         return True
 
     def calculate_score(self):
@@ -485,7 +500,13 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
                 return False
             if self.source_agent.carbon <= self.planning_policy.config['collector_config']['gohomethreshold']:
                 return False
-            
+            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            source_posotion = self.source_agent.position
+            source_center_distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], center_position[0],
+                center_position[1])
+            if source_center_distance >= 300 - self.planning_policy.game_state['board'].step - 4:
+                return False
         return True
 
     def calculate_score(self):
@@ -548,6 +569,8 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
             target_position = self.target.position
             if target_position[0] != center_position[0] or target_position[1] != center_position[1]:
                 return False
+
+            
             
         return True
 
@@ -556,7 +579,7 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            self.preference_index = 200
+            self.preference_index = 10000
 
     def translate_to_action(self):
         if not self.can_action(self.target.position):
@@ -568,6 +591,52 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
             new_position = self.source_agent.cell.position + move.to_point()
             if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
                 return move 
+
+
+class CollectorRushHomePlan(CollectorPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+    
+    def check_validity(self):
+        if self.planning_policy.config['enabled_plans'][
+                'CollectorRushHomePlan']['enabled'] == False:
+            return False
+        else:
+        #类型不对
+            if not isinstance(self.source_agent, Collector):
+                return False
+            if not isinstance(self.target, Cell):
+                return False
+            if self.target.tree is not None:
+                return False
+
+            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            source_posotion = self.source_agent.position
+            source_center_distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], center_position[0],
+                center_position[1])
+
+            if self.target.position[0] != center_position[0] or \
+                self.target.position[1] != center_position[1]:
+                return False
+            if self.source_agent.carbon <= 10:
+                return False
+
+            if source_center_distance < 300 - self.planning_policy.game_state['board'].step - 5:
+                return False
+            
+        return True
+
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            self.preference_index = 5000
+
+    def translate_to_action(self):
+        return super().translate_to_action() 
 
 class PlanningPolicy(BasePolicy):
     '''
@@ -615,6 +684,9 @@ class PlanningPolicy(BasePolicy):
                     'enabled': True
                 },
                 'CollectorGoToAndGoHomePlan': {
+                    'enabled': True
+                },
+                'CollectorRushHomePlan': {
                     'enabled': True
                 }
             },
@@ -685,6 +757,11 @@ class PlanningPolicy(BasePolicy):
                 plan = (CollectorGoToAndGoHomePlan(
                     collector, cell, self))
                 plans.append(plan)
+
+                plan = (CollectorRushHomePlan(
+                    collector, cell, self))
+                plans.append(plan)
+
             for planter in self.game_state['our_player'].planters:
                 plan = (PlanterGoToAndPlantTreeAtTreeAtPlan(
                     planter, cell, self))
@@ -809,3 +886,10 @@ class PlanningPolicy(BasePolicy):
         command_list = self.to_env_commands(clean_plan_id_action_value_dict)
         #print(command_list)
         return command_list
+
+my_policy = PlanningPolicy()
+
+def agent(obs, configuration):
+    global my_policy
+    commands = my_policy.take_action(obs, configuration)
+    return commands
