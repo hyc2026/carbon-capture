@@ -269,9 +269,9 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-        if self.target.tree.player_id == self.source_agent.player_id:
-            return False
         if self.target.tree is None:
+            return False
+        if self.target.tree.player_id == self.source_agent.player_id:
             return False
 
         #钱不够
