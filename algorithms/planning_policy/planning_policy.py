@@ -80,6 +80,11 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         #位置不对
         if self.source_agent.cell != self.target:
             return False
+
+        #人口已满
+        if self.planning_policy.game_state['our_player'].planters.__len__() + self.planning_policy.game_state['our_player'].collectors.__len__() >= 10:
+            return False
+
         #钱不够
         if self.planning_policy.game_state[
                 'our_player'].cash < self.planning_policy.game_state[
@@ -118,14 +123,16 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
     def check_validity(self):
         #没有开启
         if self.planning_policy.config['enabled_plans'][
-                'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
+                'RecrtCenterSpawnCollectorPlan']['enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
             return False
         if not isinstance(self.target, Cell):
             return False
-
+        #人口已满
+        if self.planning_policy.game_state['our_player'].planters.__len__() + self.planning_policy.game_state['our_player'].collectors.__len__() >= 10:
+            return False
         #位置不对
         if self.source_agent.cell != self.target:
             return False
