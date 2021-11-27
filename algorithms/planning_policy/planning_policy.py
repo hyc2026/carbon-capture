@@ -298,6 +298,30 @@ class PlanningPolicy(BasePolicy):
                         possible_plan.source_agent.id] = possible_plan
         return source_agent_id_plan_dict.values()
 
+    def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
+        """遍历地图上每一个位置，附近碳最多的位置按从多到少进行排序"""
+        carbon_contain_dict = dict()  # 用来存储地图上每一个位置周围4个位置当前的碳含量, {(0, 0): 32}
+        for _loc, cell in map_carbon_cell.items():
+
+            valid_loc = [(_loc[0], _loc[1] - 1),
+                        (_loc[0] - 1, _loc[1]),
+                        (_loc[0] + 1, _loc[1]),
+                        (_loc[0], _loc[1] + 1)]  # 四个位置，按行遍历时从小到大
+
+            forced_pos_valid_loc = str(valid_loc).replace('-1', '14')  # 因为棋盘大小是 15 * 15
+            forced_pos_valid_loc = eval(forced_pos_valid_loc.replace('15', '0'))
+
+            filter_cell = \
+                [_c for _, _c in map_carbon_cell.items() if getattr(_c, "position", (-100, -100)) in forced_pos_valid_loc]
+
+            assert len(filter_cell) == 4  # 因为选取周围四个值来吸收碳
+
+            carbon_contain_dict[cell] = sum([_fc.carbon for _fc in filter_cell])
+
+        map_carbon_sum_sorted = dict(sorted(carbon_contain_dict.items(), key=lambda x: x[1], reverse=True))
+
+        return map_carbon_sum_sorted
+
     #被上层调用的函数
     #所有规则为这个函数所调用
     def take_action(self, observation, configuration):
