@@ -78,6 +78,11 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         #位置不对
         if self.source_agent.cell != self.target:
             return False
+
+        #人口已满
+        if self.planning_policy.game_state['our_player'].planters.__len__() + self.palning_policy.game_state['our_player'].collectors.__len__() >= 10:
+            return False
+
         #钱不够
         if self.planning_policy.game_state[
                 'our_player'].cash < self.planning_policy.game_state[
@@ -117,7 +122,9 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-
+        #人口已满
+        if self.planning_policy.game_state['our_player'].planters.__len__() + self.palning_policy.game_state['our_player'].collectors.__len__() >= 10:
+            return False
         #位置不对
         if self.source_agent.cell != self.target:
             return False
