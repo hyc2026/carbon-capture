@@ -189,9 +189,24 @@ class CollectorPlan(BasePlan):
 
     def can_action(self, action_position):
         if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
-           return True
+            action_cell = self.planning_policy.game_state['board']._cells[action_position]
+            flag = True
+            collectors = [action_cell.collector,
+                          action_cell.up.collector, 
+                          action_cell.down.collector,
+                          action_cell.left.collector,
+                          action_cell.right.collector]
+
+            for collector in collectors:
+                if collector is None:
+                    continue
+                if collector.player_id == self.source_agent.player_id:
+                    continue
+                if collector.carbon <= self.source_agent.carbon:
+                    return False
+            return True
         else:
-           return False
+            return False
 
     def translate_to_action(self):
         potential_action = None
@@ -202,7 +217,8 @@ class CollectorPlan(BasePlan):
         source_target_distance = self.planning_policy.get_distance(
                 source_position[0], source_position[1], target_position[0],
                 target_position[1])
-        
+
+        potential_action_list = []
 
         for i, action in enumerate(WorkerActions):
             action_position = (
@@ -211,9 +227,7 @@ class CollectorPlan(BasePlan):
             )
             if not self.can_action(action_position):
                 continue
-            if action == None:
-                continue
-            
+                        
             target_action_distance = self.planning_policy.get_distance(
                 target_position[0], target_position[1], action_position[0],
                 action_position[1])
@@ -221,14 +235,22 @@ class CollectorPlan(BasePlan):
             source_action_distance = self.planning_policy.get_distance(
                 source_position[0], source_position[1], action_position[0],
                 action_position[1])
+            
+            potential_action_list.append((action, 
+                                         action_position,
+                                         target_action_distance + source_action_distance - source_target_distance,
+                                         self.planning_policy.game_state['board']._cells[action_position].carbon))
 
-            if target_action_distance + source_action_distance == source_target_distance:
-                action_positon_cell = self.planning_policy.game_state['board']._cells[action_position]                
-                if action_positon_cell.carbon > potential_carbon:
-                    potential_action = action
-                    potential_action_position = action_position
-                    potential_carbon = action_positon_cell.carbon
-        
+        potential_action_list = sorted(potential_action_list, key=lambda x: (-x[2], x[3]), reverse=True)
+        if len(potential_action_list) > 0:
+            potential_action = potential_action_list[0][0]
+            potential_action_position = potential_action_list[0][1]
+            if potential_action == None and target_position == action_position:
+                pass
+            elif potential_action == None and len(potential_action_list) > 1 and potential_action_list[1][2] == 0:
+                potential_action = potential_action_list[1][0]
+                potential_action_position = potential_action_list[1][1]                
+
         self.planning_policy.global_position_mask[potential_action_position] = 1
         return  potential_action
 
@@ -369,6 +391,8 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
         if not self.can_action(self.target.position):
             self.planning_policy.global_position_mask[self.source_agent.position] = 1
             return None
+        else:
+            self.planning_policy.global_position_mask[self.target.position] = 1
         for move in WorkerAction.moves():
             new_position = self.source_agent.cell.position + move.to_point()
             if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
