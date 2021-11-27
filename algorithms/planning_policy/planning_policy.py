@@ -62,7 +62,7 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         else:
             self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
             self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
-            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['collector_count_weight'] * self_collectors_count
+            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['collector_count_weight'] * self_collectors_count + 1
 
     def check_validity(self):
         #没有开启
@@ -105,7 +105,7 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
         else:
             self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
             self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
-            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['collector_count_weight'] * self_collectors_count
+            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['collector_count_weight'] * self_collectors_count + 1
 
     def check_validity(self):
         #没有开启
@@ -540,7 +540,7 @@ class PlanningPolicy(BasePolicy):
         pass
         plans = [
             plan for plan in plans
-            if plan.preference_index != self.config['mask_preference_index']
+            if plan.preference_index != self.config['mask_preference_index'] and plan.preference_index > 0
         ]
         return plans
 
@@ -560,6 +560,7 @@ class PlanningPolicy(BasePolicy):
         #方式是不解决冲突
         source_agent_id_plan_dict = {}
         possible_plans = sorted(possible_plans, key=lambda x: x.preference_index, reverse=True)
+        
         cell_plan = dict()
         
         # 去转化中心都不冲突x
