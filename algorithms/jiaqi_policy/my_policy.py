@@ -12,9 +12,6 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
 from typing import Tuple, Dict, List
 
 
-# TODO: 大问题： 任务基地闪烁
-
-
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
                RecrtCenterAction.RECPLANTER]
