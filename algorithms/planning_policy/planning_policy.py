@@ -184,17 +184,20 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-        if self.target.tree is not None:
+        if self.target.tree.player_id == self.source_agent.player_id:
+            return False
+        if self.target.tree is None:
             return False
 
         #钱不够
-        if self.planning_policy.game_state[
-                'our_player'].cash < self.get_actual_plant_cost():
-            return False
+        #if self.planning_policy.game_state[
+        #        'our_player'].cash < self.get_actual_plant_cost():
+        #    return False
         return True
 
     def translate_to_action(self):
-        if self.source_agent.cell == self.target:
+        if self.source_agent.cell == self.target and \
+            self.planning_policy.global_position_mask.get(self.target.position, 0) == 0:
             self.planning_policy.global_position_mask[self.target.position] = 1
             return None
         else:
@@ -458,7 +461,7 @@ class PlanningPolicy(BasePolicy):
                 #recrtCenter plans
                 'RecrtCenterSpawnPlanterPlan': {
                     'enabled': True,
-                    'planter_count_weight':-3,
+                    'planter_count_weight':-8,
                     'collector_count_weight':2,
                     # 'cash_weight':2,
                     # 'constant_weight':,
@@ -466,7 +469,7 @@ class PlanningPolicy(BasePolicy):
                 },
                 'RecrtCenterSpawnCollectorPlan': {
                     'enabled': True,
-                    'planter_count_weight':3,
+                    'planter_count_weight':8,
                     'collector_count_weight':-2,
                     # 'cash_weight':2,
                     # 'constant_weight':,
