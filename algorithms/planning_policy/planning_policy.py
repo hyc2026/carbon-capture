@@ -60,17 +60,9 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            #TODO 使用配置，而不是常数，这里肯定要改
-            if self.planning_policy.game_state['our_player'].cash - 20 * len(
-                    self.planning_policy.game_state['our_player'].planters
-            ) * 4 + 5 * len(
-                    self.planning_policy.game_state['our_player'].trees) < 30:
-                self.preference_index = self.preference_index = self.planning_policy.config[
-                    'mask_preference_index']
-            else:
-                self.preference_index = self.planning_policy.config[
-                    'enabled_plans']['RecrtCenterSpawnPlanterPlan'][
-                        'preference_index']
+            self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
+            self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
+            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['collector_count_weight'] * self_collectors_count
 
     def check_validity(self):
         #没有开启
@@ -94,8 +86,50 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        return RecrtCenterAction.RECCOLLECTOR
+        return RecrtCenterAction.RECPLANTER
 
+# 这个Plan是指转化中心招募捕碳者
+class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+
+    #CUSTOM:根据策略随意修改
+    #计算转化中心生产种树者的优先级因子
+    #当前策略是返回PlanningPolicy中设定的固定值或者一个Mask(代表关闭，值为负无穷)
+    def calculate_score(self):
+        #is valid
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
+            self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
+            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['collector_count_weight'] * self_collectors_count
+
+    def check_validity(self):
+        #没有开启
+        if self.planning_policy.config['enabled_plans'][
+                'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
+            return False
+        #类型不对
+        if not isinstance(self.source_agent, RecrtCenter):
+            return False
+        if not isinstance(self.target, Cell):
+            return False
+
+        #位置不对
+        if self.source_agent.cell != self.target:
+            return False
+        #钱不够
+        if self.planning_policy.game_state[
+                'our_player'].cash < self.planning_policy.game_state[
+                    'configuration']['recCollectorCost']:
+            return False
+        return True
+
+    def translate_to_action(self):
+        return RecrtCenterAction.RECCOLLECTOR
 
 class PlanterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
@@ -323,7 +357,6 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
     def translate_to_action(self):
         return super().translate_to_action() 
 
-
 class CollectorGoToAndGoHomePlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
@@ -392,7 +425,19 @@ class PlanningPolicy(BasePolicy):
                 #recrtCenter plans
                 'RecrtCenterSpawnPlanterPlan': {
                     'enabled': True,
-                    'preference_index': 100
+                    'planter_count_weight':-3,
+                    'collector_count_weight':2,
+                    # 'cash_weight':2,
+                    # 'constant_weight':,
+                    # 'denominator_weight':
+                },
+                'RecrtCenterSpawnCollectorPlan': {
+                    'enabled': True,
+                    'planter_count_weight':3,
+                    'collector_count_weight':-2,
+                    # 'cash_weight':2,
+                    # 'constant_weight':,
+                    # 'denominator_weight':
                 },
                 #Planter plans
                 'PlanterGoToAndPlantTreeAtTreeAtPlan': {
@@ -478,7 +523,6 @@ class PlanningPolicy(BasePolicy):
                 plan = (CollectorGoToAndGoHomePlan(
                     collector, cell, self))
                 plans.append(plan)
-
             for planter in self.game_state['our_player'].planters:
                 plan = (PlanterGoToAndPlantTreeAtTreeAtPlan(
                     planter, cell, self))
@@ -489,6 +533,8 @@ class PlanningPolicy(BasePolicy):
             for recrtCenter in self.game_state['our_player'].recrtCenters:
                 #TODO:动态地load所有的recrtCenterPlan类
                 plan = RecrtCenterSpawnPlanterPlan(recrtCenter, cell, self)
+                plans.append(plan)
+                plan = RecrtCenterSpawnCollectorPlan(recrtCenter, cell, self)
                 plans.append(plan)
             pass
         pass
