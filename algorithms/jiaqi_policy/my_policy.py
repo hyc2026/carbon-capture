@@ -172,7 +172,8 @@ class PlanterAct(AgentBase):
         """结合某一位置的碳的含量和距离"""
         # TODO：钱够不够是否考虑？
         planter_position = planter.position
-        # 取碳排量最高的前十
+        # 取碳排量最高的前n
+
         carbon_sort_dict_top_n = \
             {_v: _k for _i, (_v, _k) in enumerate(carbon_sort_dict.items()) if _i < TOP_CARBON_CONTAIN}  # 只选取含碳量top_n的cell来进行计算，拿全部的cell可能会比较耗时？
         # 计算planter和他的相对距离，并且结合该位置四周碳的含量，得到一个总的得分
@@ -181,7 +182,7 @@ class PlanterAct(AgentBase):
         for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
             if (_cell.tree is None) and (_cell.position not in planned_target):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中
                 planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
-                target_preference_score = 0 * _carbon_sum + np.log(1 / planter_to_cell_distance)  # 不考虑碳总量只考虑距离 TODO: 这会导致中了很多树，导致后期花费很高
+                target_preference_score = 0 * _carbon_sum + np.log(1 / (planter_to_cell_distance + 1e-9))  # 不考虑碳总量只考虑距离 TODO: 这会导致中了很多树，导致后期花费很高
 
                 if target_preference_score > max_score:
                     max_score = target_preference_score
