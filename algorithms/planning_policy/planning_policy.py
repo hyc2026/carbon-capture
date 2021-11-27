@@ -115,7 +115,7 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
     def check_validity(self):
         #没有开启
         if self.planning_policy.config['enabled_plans'][
-                'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
+                'RecrtCenterSpawnCollectorPlan']['enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
@@ -464,7 +464,7 @@ class PlanningPolicy(BasePolicy):
             'enabled_plans': {
                 #recrtCenter plans
                 'RecrtCenterSpawnPlanterPlan': {
-                    'enabled': True,
+                    'enabled': False,
                     'planter_count_weight':-3,
                     'collector_count_weight':2,
                     # 'cash_weight':2,
@@ -474,7 +474,7 @@ class PlanningPolicy(BasePolicy):
                 'RecrtCenterSpawnCollectorPlan': {
                     'enabled': True,
                     'planter_count_weight':3,
-                    'collector_count_weight':-2,
+                    'collector_count_weight':0,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
