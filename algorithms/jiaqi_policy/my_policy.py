@@ -246,6 +246,8 @@ class PlanterAct(AgentBase):
             else:  # 说明他有策略，看策略是否执行完毕，执行完了移出字典，没有执行完接着执行
                 if planter.position == self.planter_target[planter.id].position:
                     self.planter_target.pop(planter.id)
+                    # TODO: 这个地方还需要加入一个判断：当前是否有现金种树，如果没有种树员得离开这个地方，
+                    # 不然待着不动，容易被人干掉
                 else:  # 没有执行完接着执行
 
                     old_position = planter.position
