@@ -1,4 +1,7 @@
+from os import cpu_count
 import sys
+
+from utils.parallel_env import worker
 
 sys.path.append('.')
 sys.path.append('..')
@@ -9,11 +12,10 @@ from typing import Dict, OrderedDict, Tuple
 
 from algorithms.base_policy import BasePolicy
 from envs.obs_parser_xinnian import (BaseActions, ObservationParser,
-                                     WorkerActions)
+                                     WorkerActions, WorkerDirections)
 from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
-                                             Point, RecrtCenter,
+                                             Point, RecrtCenter, Worker,
                                              RecrtCenterAction, WorkerAction)
-
 
 # Plan是一个Agent行动的目标，它可以由一个Action完成(比如招募捕碳者），也可以由多
 # 个Action完成（比如种树者走到一个地方去种树）
@@ -90,7 +92,7 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        return RecrtCenterAction.RECPLANTER
+        return RecrtCenterAction.RECCOLLECTOR
 
 
 class PlanterPlan(BasePlan):
@@ -179,9 +181,49 @@ class CollectorPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
 
-    def check_valid(self):
+    def check_validity(self):
         yes_it_is = isinstance(self.source_agent, Collector)
         return yes_it_is
+
+    def can_action(self, action):
+        return True
+
+    def translate_to_action(self):
+        potential_action = None
+        potential_carbon = -1
+        source_position = self.source_agent.position
+        target_position = self.target.position
+        source_target_distance = self.planning_policy.get_distance(
+                source_position[0], source_position[1], target_position[0],
+                target_position[1])
+        
+
+        for i, action in enumerate(WorkerActions):
+            if not self.can_action(action):
+                continue
+            if action == None:
+                continue
+
+            action_position = (
+                (WorkerDirections[i][0] + source_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
+                (WorkerDirections[i][1] + source_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+            )
+            
+            target_action_distance = self.planning_policy.get_distance(
+                target_position[0], target_position[1], action_position[0],
+                action_position[1])
+            
+            source_action_distance = self.planning_policy.get_distance(
+                source_position[0], source_position[1], action_position[0],
+                action_position[1])
+
+            if target_action_distance + source_action_distance == source_target_distance:
+                action_positon_cell = self.planning_policy.game_state['board']._cells[action_position]                
+                if action_positon_cell.carbon > potential_carbon:
+                    potential_action = action
+                    potential_carbon = action_positon_cell.carbon
+        
+        return  potential_action
 
 
 class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
@@ -189,19 +231,19 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
     
-    def check_valid(self):
+    def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'CollectorGoToAndCollectCarbonPlan']['enabled'] == False:
             return False
         else:
         #类型不对
-            if not isinstance(self.source_agent, Planter):
+            if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
                 return False
             if self.target.tree is not None:
                 return False
-            if self.source_agent.carbon > self.planning_policy.config['collector']['gohomethreshold']:
+            if self.source_agent.carbon > self.planning_policy.config['collector_config']['gohomethreshold']:
                 return False
             
         return True
@@ -217,7 +259,8 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
 
-            self.preference_index = min(self.target.down.carbon * (1.05 ** distance) / (distance + 1), 100)
+            self.preference_index = min(self.target.carbon * (1.05 ** distance) / (distance + 1), 100)
+            
     
     def translate_to_action(self):
         return super().translate_to_action()
@@ -227,19 +270,19 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
     
-    def check_valid(self):
+    def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'CollectorGoToAndGoHomeWithCollectCarbonPlan']['enabled'] == False:
             return False
         else:
         #类型不对
-            if not isinstance(self.source_agent, Planter):
+            if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
                 return False
             if self.target.tree is not None:
                 return False
-            if self.source_agent.carbon <= self.planning_policy.config['collector']['gohomethreshold']:
+            if self.source_agent.carbon <= self.planning_policy.config['collector_config']['gohomethreshold']:
                 return False
             
         return True
@@ -252,7 +295,7 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
             source_posotion = self.source_agent.position
             target_position = self.target.position
 
-            center_position = (1, 1)
+            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
             target_center_distance = self.planning_policy.get_distance(
                 center_position[0], center_position[1], target_position[0],
                 target_position[1])
@@ -266,13 +309,12 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
                 target_position[1])
 
             if target_center_distance + source_target_distance == source_center_distance:
-                self.preference_index = min(self.target.down.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) + 100
+                self.preference_index = min(self.target.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) + 100
             else:
-                self.preference_index = min(self.target.down.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) - 100
+                self.preference_index = min(self.target.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) - 100
 
     def translate_to_action(self):
-        return super().translate_to_action()    
-
+        return super().translate_to_action() 
 
 
 class CollectorGoToAndGoHomePlan(CollectorPlan):
@@ -280,13 +322,13 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
     
-    def check_valid(self):
+    def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'CollectorGoToAndGoHomePlan']['enabled'] == False:
             return False
         else:
         #类型不对
-            if not isinstance(self.source_agent, Planter):
+            if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
                 return False
@@ -294,10 +336,18 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
                 return False
             if self.source_agent.carbon <= self.planning_policy.config['collector_config']['gohomethreshold']:
                 return False
-            # 与转化中心距离为1
 
+            # 与转化中心距离大于1
+            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            source_position = self.source_agent.position
+            if self.planning_policy.get_distance(
+                source_position[0], source_position[1], center_position[0],
+                center_position[1]) > 1:
+                return False
             # target 不是转化中心
-
+            target_position = self.target.position
+            if target_position[0] != center_position[0] or target_position[1] != center_position[1]:
+                return False
             
         return True
 
@@ -309,6 +359,11 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
             self.preference_index = 200
 
     def translate_to_action(self):
+        for move in WorkerAction.moves():
+            new_position = self.source_agent.cell.position + move.to_point()
+            if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
+                return move
+
         return super().translate_to_action()    
 
 class PlanningPolicy(BasePolicy):
@@ -339,13 +394,13 @@ class PlanningPolicy(BasePolicy):
                 },
                 #Collector plans
                 'CollectorGoToAndCollectCarbonPlan': {
-                    'enabled': False
+                    'enabled': True
                 },
                 'CollectorGoToAndGoHomeWithCollectCarbonPlan': {
-                    'enabled': False
+                    'enabled': True
                 },
                 'CollectorGoToAndGoHomePlan': {
-                    'enabled': False
+                    'enabled': True
                 }
             },
             'collector_config': {
@@ -368,10 +423,14 @@ class PlanningPolicy(BasePolicy):
     #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
     #mod self.config['column_count]
     def get_distance(self, x1, y1, x2, y2):
-        return (x1 - x2 +
-                self.config['row_count']) % self.config['row_count'] + (
+        x_1_to_2= (x1 - x2 +
+                self.config['row_count']) % self.config['row_count'] 
+        y_1_to_2= (
                     y1 - y2 +
                     self.config['column_count']) % self.config['column_count']
+        dis_x = min(self.config['row_count'] - x_1_to_2 , x_1_to_2)
+        dis_y = min(self.config['column_count'] - y_1_to_2 , y_1_to_2)
+        return dis_x + dis_y
 
     @staticmethod
     def to_env_commands(policy_actions: Dict[str, int]) -> Dict[str, str]:
@@ -402,11 +461,22 @@ class PlanningPolicy(BasePolicy):
             # iterate over all collectors planters and recrtCenter of currnet
             # player
             for collector in self.game_state['our_player'].collectors:
-                pass
+                plan = (CollectorGoToAndCollectCarbonPlan(
+                    collector, cell, self))
+                plans.append(plan)
+                plan = (CollectorGoToAndGoHomeWithCollectCarbonPlan(
+                    collector, cell, self))
+                plans.append(plan)
+                plan = (CollectorGoToAndGoHomePlan(
+                    collector, cell, self))
+                plans.append(plan)
 
             for planter in self.game_state['our_player'].planters:
                 plan = (PlanterGoToAndPlantTreeAtTreeAtPlan(
                     planter, cell, self))
+
+
+                
                 plans.append(plan)
             for recrtCenter in self.game_state['our_player'].recrtCenters:
                 #TODO:动态地load所有的recrtCenterPlan类
@@ -435,16 +505,28 @@ class PlanningPolicy(BasePolicy):
         #TODO:解决plan之间的冲突,比如2个种树者要去同一个地方种树，现在的plan选择
         #方式是不解决冲突
         source_agent_id_plan_dict = {}
+        possible_plans = sorted(possible_plans, key=lambda x: x.preference_index, reverse=True)
+        cell_plan = dict()
+        
+        # 去转化中心都不冲突x
+        center_position = self.game_state['our_player'].recrtCenters[0].position
+        cell_plan[center_position] = -100
+
         for possible_plan in possible_plans:
-            if possible_plan.source_agent.id not in source_agent_id_plan_dict:
+            if possible_plan.source_agent.id in source_agent_id_plan_dict:
+                continue
+            if isinstance(possible_plan.source_agent, Worker):
+                if cell_plan.get(possible_plan.target.position, 0) > 0:
+                    continue
+                cell_plan[possible_plan.target.position] = cell_plan.get(possible_plan.target.position, 1)
+                source_agent_id_plan_dict[
+                    possible_plan.source_agent.id] = possible_plan                
+            else:
                 source_agent_id_plan_dict[
                     possible_plan.source_agent.id] = possible_plan
-            else:
-                if source_agent_id_plan_dict[
-                        possible_plan.source_agent.
-                        id].preference_index < possible_plan.preference_index:
-                    source_agent_id_plan_dict[
-                        possible_plan.source_agent.id] = possible_plan
+        #print(source_agent_id_plan_dict)
+        #for s, t in source_agent_id_plan_dict.items():
+        #    print(s, t.target.position)
         return source_agent_id_plan_dict.values()
 
     def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
@@ -499,4 +581,5 @@ class PlanningPolicy(BasePolicy):
         }
         clean_plan_id_action_value_dict = remove_none_action_actions(plan_dict)
         command_list = self.to_env_commands(clean_plan_id_action_value_dict)
+        #print(command_list)
         return command_list

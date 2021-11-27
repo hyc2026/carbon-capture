@@ -4,7 +4,7 @@ from collections import Counter
 
 from zerosum_env import evaluate
 from zerosum_env.envs.carbon.helpers import *
-
+from algorithms.planning_policy.planning_policy import PlanningPolicy
 from algorithms.eval_policy import EvalPolicy
 
 try:
@@ -26,8 +26,8 @@ if __name__ == '__main__':
 
     player = EvalPolicy()
     # model_path = './runs/run2/models/model_best.pth'
-    model_path = '/sdb/v-bingwang/workspace/carbon_baseline_cuda/runs/run2/models/model_950.pth'
-    player.restore(torch.load(model_path))
+    #model_path = '/sdb/v-bingwang/workspace/carbon_baseline_cuda/runs/run2/models/model_950.pth'
+    my_ploicy = PlanningPolicy()
 
     t0 = time.time()
 
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     def evaluate_agent():
         rew, _, _, _ = evaluate(
             "carbon",
-            agents=[take_action, "random"],
+            agents=[my_ploicy.take_action, "random"],
             configuration={"randomSeed": 1},
             debug=True,
             num_episodes=NUM_EPISODES)  # default == 1
