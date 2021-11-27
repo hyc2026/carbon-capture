@@ -12,6 +12,9 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
 from typing import Tuple, Dict, List
 
 
+# TODO: 大问题： 任务基地闪烁
+
+
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
                RecrtCenterAction.RECPLANTER]
@@ -178,7 +181,7 @@ class PlanterAct(AgentBase):
         for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
             if (_cell.tree is None) and (_cell.position not in planned_target):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中
                 planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
-                target_preference_score = 0 * _carbon_sum + np.log(1 / planter_to_cell_distance)  # 不考虑碳总量只考虑距离
+                target_preference_score = 0 * _carbon_sum + np.log(1 / planter_to_cell_distance)  # 不考虑碳总量只考虑距离 TODO: 这会导致中了很多树，导致后期花费很高
 
                 if target_preference_score > max_score:
                     max_score = target_preference_score
@@ -261,12 +264,13 @@ class RecruiterAct(AgentBase):
 
     def action(self, ours_info, **kwargs):
         store_dict = dict()
-        if len(ours_info.planters) == 0:   # 招募1个种树人员
+        if len(ours_info.planters) == 0:  # 招募1个种树人员
             store_dict[ours_info.recrtCenters[0].id] = RecrtCenterAction.RECPLANTER.name
-        # elif len(ours_info.planters) == 1 and len(ours_info.trees) > 1:
-        #     store_dict[ours_info.recrtCenters[0].id] = RecrtCenterAction.RECPLANTER.name
-        # elif len(ours_info.planters) == 2 and len(ours_info.trees) > 2:
-        #     store_dict[ours_info.recrtCenters[0].id] = RecrtCenterAction.RECPLANTER.name
+        if ours_info.recrtCenters[0].cell.worker is None:   # # 确定基地位置没有任何Agent才能进行招募
+            if len(ours_info.planters) == 1 and len(ours_info.trees) > 3:
+                store_dict[ours_info.recrtCenters[0].id] = RecrtCenterAction.RECPLANTER.name
+            # elif len(ours_info.planters) == 2 and len(ours_info.trees) > 10:
+            #     store_dict[ours_info.recrtCenters[0].id] = RecrtCenterAction.RECPLANTER.name
 
         return store_dict
 
@@ -289,6 +293,8 @@ class PlanningPolicy(BasePolicy):
             map_carbon_location=current_obs.cells,
             step=current_obs.step,
         )
+
+        # 这里要进行一个判断，确保基地位置没有智能体才能招募下一个
 
         if recruit_dict is not None:
             overall_dict.update(recruit_dict)
