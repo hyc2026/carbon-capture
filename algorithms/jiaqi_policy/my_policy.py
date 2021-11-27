@@ -158,7 +158,7 @@ class PlanterAct(AgentBase):
     @ staticmethod
     def _minimum_distance(point_1, point_2):
         abs_distance = abs(point_1 - point_2)
-        cross_distance = min(point_1, point_2) + (14 - max(point_1, point_2))  # TODO: 这里对吗，是14减?
+        cross_distance = min(point_1, point_2) + (14 - max(point_1, point_2)) + 1 # cell坐标范围是 [0, 14]
         return min(abs_distance, cross_distance)
 
     def _calculate_distance(self, planter_position, current_position):
