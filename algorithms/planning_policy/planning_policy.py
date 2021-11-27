@@ -195,6 +195,7 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
 
     def translate_to_action(self):
         if self.source_agent.cell == self.target:
+            self.planning_policy.global_position_mask[self.target.position] = 1
             return None
         else:
             old_position = self.source_agent.cell.position
@@ -202,15 +203,23 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
                 old_position[0], old_position[1], self.target.position[0],
                 self.target.position[1])
 
+            move_list = []
             for move in WorkerAction.moves():
                 new_position = self.source_agent.cell.position + move.to_point(
                 )
                 new_distance = self.planning_policy.get_distance(
                     new_position[0], new_position[1], self.target.position[0],
                     self.target.position[1])
+                move_list.append((move, new_distance))
 
-                if new_distance < old_distance:
+            move_list = sorted(move_list, key=lambda x: x[1])
+
+            for move, _ in move_list:
+                new_position = self.source_agent.cell.position + move.to_point()
+                if self.planning_policy.global_position_mask.get(new_position, 0) == 0:
+                    self.planning_policy.global_position_mask[new_position] = 1
                     return move
+            return None
 
 
 class CollectorPlan(BasePlan):
@@ -585,21 +594,28 @@ class PlanningPolicy(BasePolicy):
         source_agent_id_plan_dict = {}
         possible_plans = sorted(possible_plans, key=lambda x: x.preference_index, reverse=True)
         
-        cell_plan = dict()
+        collector_cell_plan = dict()
+        planter_cell_plan = dict()
         
         # 去转化中心都不冲突x
         center_position = self.game_state['our_player'].recrtCenters[0].position
-        cell_plan[center_position] = -100
+        collector_cell_plan[center_position] = -100
 
         for possible_plan in possible_plans:
             if possible_plan.source_agent.id in source_agent_id_plan_dict:
                 continue
-            if isinstance(possible_plan.source_agent, Worker):
-                if cell_plan.get(possible_plan.target.position, 0) > 0:
+            if isinstance(possible_plan.source_agent, Collector):
+                if collector_cell_plan.get(possible_plan.target.position, 0) > 0:
                     continue
-                cell_plan[possible_plan.target.position] = cell_plan.get(possible_plan.target.position, 1)
+                collector_cell_plan[possible_plan.target.position] = collector_cell_plan.get(possible_plan.target.position, 1)
                 source_agent_id_plan_dict[
-                    possible_plan.source_agent.id] = possible_plan                
+                    possible_plan.source_agent.id] = possible_plan    
+            elif isinstance(possible_plan.source_agent, Planter):
+                if planter_cell_plan.get(possible_plan.target.position, 0) > 0:
+                    continue
+                planter_cell_plan[possible_plan.target.position] = planter_cell_plan.get(possible_plan.target.position, 1)
+                source_agent_id_plan_dict[
+                    possible_plan.source_agent.id] = possible_plan             
             else:
                 source_agent_id_plan_dict[
                     possible_plan.source_agent.id] = possible_plan
