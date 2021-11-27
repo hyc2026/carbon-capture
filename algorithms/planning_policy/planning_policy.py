@@ -17,6 +17,8 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter, Worker,
                                              RecrtCenterAction, WorkerAction)
 
+
+
 # Plan是一个Agent行动的目标，它可以由一个Action完成(比如招募捕碳者），也可以由多
 # 个Action完成（比如种树者走到一个地方去种树）
 #
@@ -185,11 +187,15 @@ class CollectorPlan(BasePlan):
         yes_it_is = isinstance(self.source_agent, Collector)
         return yes_it_is
 
-    def can_action(self, action):
-        return True
+    def can_action(self, action_position):
+        if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
+           return True
+        else:
+           return False
 
     def translate_to_action(self):
         potential_action = None
+        potential_action_position = self.source_agent.position
         potential_carbon = -1
         source_position = self.source_agent.position
         target_position = self.target.position
@@ -199,15 +205,14 @@ class CollectorPlan(BasePlan):
         
 
         for i, action in enumerate(WorkerActions):
-            if not self.can_action(action):
-                continue
-            if action == None:
-                continue
-
             action_position = (
                 (WorkerDirections[i][0] + source_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
                 (WorkerDirections[i][1] + source_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
             )
+            if not self.can_action(action_position):
+                continue
+            if action == None:
+                continue
             
             target_action_distance = self.planning_policy.get_distance(
                 target_position[0], target_position[1], action_position[0],
@@ -221,8 +226,10 @@ class CollectorPlan(BasePlan):
                 action_positon_cell = self.planning_policy.game_state['board']._cells[action_position]                
                 if action_positon_cell.carbon > potential_carbon:
                     potential_action = action
+                    potential_action_position = action_position
                     potential_carbon = action_positon_cell.carbon
         
+        self.planning_policy.global_position_mask[potential_action_position] = 1
         return  potential_action
 
 
@@ -359,12 +366,13 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
             self.preference_index = 200
 
     def translate_to_action(self):
+        if not self.can_action(self.target.position):
+            self.planning_policy.global_position_mask[self.source_agent.position] = 1
+            return None
         for move in WorkerAction.moves():
             new_position = self.source_agent.cell.position + move.to_point()
             if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
-                return move
-
-        return super().translate_to_action()    
+                return move 
 
 class PlanningPolicy(BasePolicy):
     '''
@@ -556,6 +564,8 @@ class PlanningPolicy(BasePolicy):
     #被上层调用的函数
     #所有规则为这个函数所调用
     def take_action(self, observation, configuration):
+        self.global_position_mask = dict()
+                            
         self.parse_observation(observation, configuration)
         possible_plans = self.make_possible_plans()
         plans = self.possible_plans_to_plans(possible_plans)
