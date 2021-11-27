@@ -174,7 +174,7 @@ class PlanterAct(AgentBase):
             {_v: _k for _i, (_v, _k) in enumerate(carbon_sort_dict.items()) if _i < TOP_CARBON_CONTAIN}  # 只选取含碳量top_n的cell来进行计算，拿全部的cell可能会比较耗时？
         # 计算planter和他的相对距离，并且结合该位置四周碳的含量，得到一个总的得分
         planned_target = [Point(*_v.position) for _k, _v in self.planter_target.items()]
-        max_score, max_score_cell = 0, None
+        max_score, max_score_cell = -1e9, None
         for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
             if (_cell.tree is None) and (_cell.position not in planned_target):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中
                 planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
