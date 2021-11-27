@@ -175,6 +175,142 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
                     return move
 
 
+class CollectorPlan(BasePlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+
+    def check_valid(self):
+        yes_it_is = isinstance(self.source_agent, Collector)
+        return yes_it_is
+
+
+class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+    
+    def check_valid(self):
+        if self.planning_policy.config['enabled_plans'][
+                'CollectorGoToAndCollectCarbonPlan']['enabled'] == False:
+            return False
+        else:
+        #类型不对
+            if not isinstance(self.source_agent, Planter):
+                return False
+            if not isinstance(self.target, Cell):
+                return False
+            if self.target.tree is not None:
+                return False
+            if self.source_agent.carbon > self.planning_policy.config['collector']['gohomethreshold']:
+                return False
+            
+        return True
+
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            source_posotion = self.source_agent.position
+            target_position = self.target.position
+            distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], target_position[0],
+                target_position[1])
+
+            self.preference_index = min(self.target.down.carbon * (1.05 ** distance) / (distance + 1), 100)
+    
+    def translate_to_action(self):
+        return super().translate_to_action()
+
+class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+    
+    def check_valid(self):
+        if self.planning_policy.config['enabled_plans'][
+                'CollectorGoToAndGoHomeWithCollectCarbonPlan']['enabled'] == False:
+            return False
+        else:
+        #类型不对
+            if not isinstance(self.source_agent, Planter):
+                return False
+            if not isinstance(self.target, Cell):
+                return False
+            if self.target.tree is not None:
+                return False
+            if self.source_agent.carbon <= self.planning_policy.config['collector']['gohomethreshold']:
+                return False
+            
+        return True
+
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            source_posotion = self.source_agent.position
+            target_position = self.target.position
+
+            center_position = (1, 1)
+            target_center_distance = self.planning_policy.get_distance(
+                center_position[0], center_position[1], target_position[0],
+                target_position[1])
+            
+            source_target_distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], target_position[0],
+                target_position[1])
+            
+            source_center_distance = self.planning_policy.get_distance(
+                source_posotion[0], source_posotion[1], target_position[0],
+                target_position[1])
+
+            if target_center_distance + source_target_distance == source_center_distance:
+                self.preference_index = min(self.target.down.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) + 100
+            else:
+                self.preference_index = min(self.target.down.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) - 100
+
+    def translate_to_action(self):
+        return super().translate_to_action()    
+
+
+
+class CollectorGoToAndGoHomePlan(CollectorPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+    
+    def check_valid(self):
+        if self.planning_policy.config['enabled_plans'][
+                'CollectorGoToAndGoHomePlan']['enabled'] == False:
+            return False
+        else:
+        #类型不对
+            if not isinstance(self.source_agent, Planter):
+                return False
+            if not isinstance(self.target, Cell):
+                return False
+            if self.target.tree is not None:
+                return False
+            if self.source_agent.carbon <= self.planning_policy.config['collector_config']['gohomethreshold']:
+                return False
+            # 与转化中心距离为1
+
+            # target 不是转化中心
+
+            
+        return True
+
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            self.preference_index = 200
+
+    def translate_to_action(self):
+        return super().translate_to_action()    
+
 class PlanningPolicy(BasePolicy):
     '''
     这个版本的机器人只能够发出两种指令:
@@ -200,7 +336,20 @@ class PlanningPolicy(BasePolicy):
                     'enabled': True,
                     'cell_carbon_weight': 1,
                     'cell_distance_weight': -7
+                },
+                #Collector plans
+                'CollectorGoToAndCollectCarbonPlan': {
+                    'enabled': False
+                },
+                'CollectorGoToAndGoHomeWithCollectCarbonPlan': {
+                    'enabled': False
+                },
+                'CollectorGoToAndGoHomePlan': {
+                    'enabled': False
                 }
+            },
+            'collector_config': {
+                'gohomethreshold': 100,
             },
             'row_count': 15,
             'column_count': 15,
