@@ -115,6 +115,10 @@ class AgentBase:
     def action(self, **kwargs):
         pass
 
+# ---------------------------------------------------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------------------------------------------------
+
 
 def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
     """遍历地图上每一个位置，附近碳最多的位置按从多到少进行排序"""
@@ -141,7 +145,7 @@ def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
     return map_carbon_sum_sorted
 
 
-class WorkerAct(AgentBase):
+class CollectorAct(AgentBase):
     def __init__(self):
         super().__init__()
 
@@ -158,7 +162,7 @@ class PlanterAct(AgentBase):
     @ staticmethod
     def _minimum_distance(point_1, point_2):
         abs_distance = abs(point_1 - point_2)
-        cross_distance = min(point_1, point_2) + (14 - max(point_1, point_2)) + 1 # cell坐标范围是 [0, 14]
+        cross_distance = min(point_1, point_2) + (15 - max(point_1, point_2))
         return min(abs_distance, cross_distance)
 
     def _calculate_distance(self, planter_position, current_position):
@@ -169,10 +173,20 @@ class PlanterAct(AgentBase):
         return x_distance + y_distance
 
     def _target_plan(self, planter: Planter, carbon_sort_dict: Dict):
-        """结合某一位置的碳的含量和距离"""
-        # TODO：钱够不够是否考虑？
+        # 什么时候种树，敌方树多少，我方树多少，地图上的碳
+        # 我方树在N棵以内的时候，我方种树
+        # 敌方有树，优先抢敌方的树
+        # 我方树大于N棵，敌方没有树，我方种树员停留在树龄最小的树上保护树
+
         planter_position = planter.position
         # 取碳排量最高的前n
+
+        # if True:  # 我方树在N棵以内的时候，我方优先种树
+        #     pass
+        # elif False:   # 我方树大于N棵的时候，优先抢敌方的树
+        #     pass
+        # elif False:   # 我方树大于M棵的时候，停止种树，开始守护树
+        #     pass
 
         carbon_sort_dict_top_n = \
             {_v: _k for _i, (_v, _k) in enumerate(carbon_sort_dict.items()) if _i < TOP_CARBON_CONTAIN}  # 只选取含碳量top_n的cell来进行计算，拿全部的cell可能会比较耗时？
@@ -180,7 +194,7 @@ class PlanterAct(AgentBase):
         planned_target = [Point(*_v.position) for _k, _v in self.planter_target.items()]
         max_score, max_score_cell = -1e9, None
         for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
-            if (_cell.tree is None) and (_cell.position not in planned_target):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中
+            if (_cell.tree is None) and (_cell.position not in planned_target) and (_cell.recrtCenter is None):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中, 且这个位置不能是基地
                 planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
                 target_preference_score = 0 * _carbon_sum + np.log(1 / (planter_to_cell_distance + 1e-9))  # 不考虑碳总量只考虑距离 TODO: 这会导致中了很多树，导致后期花费很高
 
@@ -224,14 +238,13 @@ class PlanterAct(AgentBase):
         for planter in ours_info.planters:
             # 先给他随机初始化一个行动
             if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
+
                 target_cell = self._target_plan(planter, carbon_sort_dict)  # 返回这个智能体要去哪里的一个字典
+
                 self.planter_target[planter.id] = target_cell  # 给它新的行动
+
             else:  # 说明他有策略，看策略是否执行完毕，执行完了移出字典，没有执行完接着执行
                 if planter.position == self.planter_target[planter.id].position:
-                    # 执行一次种树行动, TODO: 如果钱够就种树，钱不够不执行任何操作
-                    # move_action_dict[planter.id] = None
-                    # TODO: 这里不执行任何行动就表示种树了？
-                    # 移出字典
                     self.planter_target.pop(planter.id)
                 else:  # 没有执行完接着执行
 
@@ -240,7 +253,9 @@ class PlanterAct(AgentBase):
                     old_distance = self._calculate_distance(old_position, target_position)
 
                     for move in WorkerAction.moves():
-                        new_position = old_position + move.to_point()
+                        new_position = old_position + move.to_point()   # TODO: 考虑地图跨界情况
+                        new_position = str(new_position).replace("15", "0")
+                        new_position = Point(*eval(new_position.replace("-1", "14")))
                         new_distance = self._calculate_distance(new_position, target_position)
 
                         if new_distance < old_distance:
@@ -279,7 +294,7 @@ class RecruiterAct(AgentBase):
 class PlanningPolicy(BasePolicy):
     def __init__(self, ):
         super().__init__()
-        # self.worker = WorkerAct()
+        # self.worker = CollectorAct()
         self.planter = PlanterAct()
         self.recruiter = RecruiterAct()
 
@@ -294,8 +309,6 @@ class PlanningPolicy(BasePolicy):
             map_carbon_location=current_obs.cells,
             step=current_obs.step,
         )
-
-        # 这里要进行一个判断，确保基地位置没有智能体才能招募下一个
 
         if recruit_dict is not None:
             overall_dict.update(recruit_dict)
