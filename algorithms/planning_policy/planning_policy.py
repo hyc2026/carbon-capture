@@ -62,7 +62,9 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         else:
             self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
             self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
-            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['collector_count_weight'] * self_collectors_count + 1
+            self.preference_index =  (self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['planter_count_weight'] * self_planters_count \
+                + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['collector_count_weight'] * self_collectors_count \
+                + 1) / 1000
 
     def check_validity(self):
         #没有开启
@@ -91,7 +93,11 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        return RecrtCenterAction.RECPLANTER
+        if self.planning_policy.global_position_mask.get(self.source_agent.position, 0) == 0:
+            self.planning_policy.global_position_mask[self.source_agent.position] = 1
+            return RecrtCenterAction.RECPLANTER
+        else:
+            return None
 
 # 这个Plan是指转化中心招募捕碳者
 class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
@@ -110,7 +116,9 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
         else:
             self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
             self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
-            self.preference_index =  self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['planter_count_weight'] * self_planters_count + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['collector_count_weight'] * self_collectors_count + 1
+            self.preference_index =  (self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['planter_count_weight'] * self_planters_count \
+                + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['collector_count_weight'] * self_collectors_count \
+                    + 1) / 1000 + 0.0001
 
     def check_validity(self):
         #没有开启
@@ -136,7 +144,11 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        return RecrtCenterAction.RECCOLLECTOR
+        if self.planning_policy.global_position_mask.get(self.source_agent.position, 0) == 0:
+            self.planning_policy.global_position_mask[self.source_agent.position] = 1
+            return RecrtCenterAction.RECCOLLECTOR
+        else:
+            return None
 
 class PlanterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
@@ -145,6 +157,27 @@ class PlanterPlan(BasePlan):
     def check_valid(self):
         yes_it_is = isinstance(self.source_agent, Planter)
         return yes_it_is
+        
+    def can_action(self, action_position):
+        if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
+            action_cell = self.planning_policy.game_state['board']._cells[action_position]
+            flag = True
+
+            collectors = [action_cell.collector,
+                          action_cell.up.collector, 
+                          action_cell.down.collector,
+                          action_cell.left.collector,
+                          action_cell.right.collector]
+
+            for collector in collectors:
+                if collector is None:
+                    continue
+                if collector.player_id == self.source_agent.player_id:
+                    continue
+                return False
+            return True
+        else:
+            return False
 
     def get_actual_plant_cost(self):
         configuration = self.planning_policy.game_state['configuration']
@@ -169,13 +202,20 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
+            if self.target.tree is None:
+                self.preference_index = 0.0001
+                return
+            if self.target.tree.player_id == self.source_agent.player_id:
+                self.preference_index = 0.0001
+                return 
+
             source_posotion = self.source_agent.position
             target_position = self.target.position
             distance = self.planning_policy.get_distance(
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
 
-            self.preference_index = self.target.down.carbon * self.planning_policy.config[
+            self.preference_index = (50 - self.target.tree.age) * self.planning_policy.config[
                 'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
                     'cell_carbon_weight'] + distance * self.planning_policy.config[
                         'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
@@ -191,10 +231,11 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-        if self.target.tree is None:
-            return False
-        if self.target.tree.player_id == self.source_agent.player_id:
-            return False
+        
+        #if self.target.tree is None:
+        #    return False
+        #if self.target.tree.player_id == self.source_agent.player_id:
+        #    return False
         #钱不够
         #if self.planning_policy.game_state[
         #        'our_player'].cash < self.get_actual_plant_cost():
@@ -202,8 +243,7 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
         return True
 
     def translate_to_action(self):
-        if self.source_agent.cell == self.target and \
-            self.planning_policy.global_position_mask.get(self.target.position, 0) == 0:
+        if self.source_agent.cell == self.target and self.can_action(self.target.position):
             self.planning_policy.global_position_mask[self.target.position] = 1
             return None
         else:
@@ -213,19 +253,23 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
                 self.target.position[1])
 
             move_list = []
-            for move in WorkerAction.moves():
-                new_position = self.source_agent.cell.position + move.to_point(
+
+            for i, action in enumerate(WorkerActions):
+                if action == None:
+                    continue
+                new_position = (
+                    (WorkerDirections[i][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
+                    (WorkerDirections[i][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
                 )
                 new_distance = self.planning_policy.get_distance(
                     new_position[0], new_position[1], self.target.position[0],
                     self.target.position[1])
-                move_list.append((move, new_distance))
+                move_list.append((action, new_position, new_distance))
 
-            move_list = sorted(move_list, key=lambda x: x[1])
+            move_list = sorted(move_list, key=lambda x: x[2])
 
-            for move, _ in move_list:
-                new_position = self.source_agent.cell.position + move.to_point()
-                if self.planning_policy.global_position_mask.get(new_position, 0) == 0:
+            for move, new_position, new_d in move_list:
+                if self.can_action(new_position):
                     self.planning_policy.global_position_mask[new_position] = 1
                     return move
             return None
