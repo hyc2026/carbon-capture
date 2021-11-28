@@ -1,14 +1,14 @@
 from os import cpu_count
 import sys
 import numpy as np
-from numpy import positive
+from numpy import nested_iters, positive
 
 sys.path.append('.')
 sys.path.append('..')
 sys.path.append('../..')
 import copy
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from typing import Dict, Tuple, final
 from math import log, exp
 
 from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
@@ -333,9 +333,8 @@ class PlanterPlan(BasePlan):
 
             for worker in collectors:
                 if worker:
-                    if worker.player_id == self.source_agent.player_id:
-                        continue
-                    return False
+                    if worker.player_id != self.source_agent.player_id:
+                        return False
             
             return True
         else:
@@ -363,9 +362,28 @@ class PlanterPlan(BasePlan):
             )
             if self.can_action(new_position):
                 return action, new_position
-        return None, old_position
+        final_ac = waiting_list[randint(0, len(waiting_list) - 1)]
+        new_position = (
+                (Action2Direction[final_ac][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
+                (Action2Direction[final_ac][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+            )
+        return final_ac, new_position
+        # return None, old_position
 
 
+    def get_nearest_oppo_distance(self):
+        my_id = self.source_agent.player_id  # 我方玩家id
+        worker_dict = self.planning_policy.game_state['board'].workers  # 地图所有的 Planter & Collector
+        min_distance = 100000  # 目标单元格附近最近的敌人到该单元格的距离，具体怎么使用待定
+        target_position = self.target.position
+        for work_id, cur_worker in worker_dict.items():
+            if cur_worker.player_id != my_id:  # 敌方worker
+                cur_pos = cur_worker.position
+                cur_dis = self.planning_policy.get_distance(target_position[0], target_position[1],
+                                                            cur_pos[0], cur_pos[1])
+                if cur_dis < min_distance:
+                    min_distance = cur_dis
+        return min_distance
 
     def translate_to_action_first(self):
         # 如果当前已经到达目标单元格，并且满足移动条件
@@ -449,31 +467,29 @@ class PlanterRobTreePlan(PlanterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            distance = self.get_distance2target()
-            if self.target.tree is None:
-                self.preference_index = self.get_total_carbon(distance) / 400
-                return
-            if self.target.tree.player_id == self.source_agent.player_id:
-                self.preference_index = 0.00001
-                return 
-
             # source_posotion = self.source_agent.position
             # target_position = self.target.position
             # distance = self.planning_policy.get_distance(
             #     source_posotion[0], source_posotion[1], target_position[0],
             #     target_position[1])
-            distance = self.get_distance2target()
+            distance2target = self.get_distance2target()
 
             # self.preference_index = (50 - self.target.tree.age) * self.planning_policy.config[
             #     'enabled_plans']['PlanterRobTreePlan'][
             #         'cell_carbon_weight'] + distance * self.planning_policy.config[
             #             'enabled_plans']['PlanterRobTreePlan'][
             #                 'cell_distance_weight']
-            total_carbon = self.get_total_carbon(distance)
+            total_carbon = self.get_total_carbon(distance2target)
+            cur_json = self.planning_policy.config['enabled_plans']['PlanterRobTreePlan']
+            distance_damp_rate = cur_json['distance_damp_rate']
             # total_carbon = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], self.target.position, distance)
-            nearest_oppo_planter_distance = 10000
-            age_can_use = min(50 - self.target.tree.age - distance - 1, nearest_oppo_planter_distance)
-            self.preference_index = 2 * sum([total_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
+            nearest_oppo_planter_distance = self.get_nearest_oppo_distance()
+            print(nearest_oppo_planter_distance)
+            age_can_use = min(50 - self.target.tree.age - distance2target - 1, nearest_oppo_planter_distance)
+            cost = 20
+            base = 1000
+            expect_carbon = 2 * sum([total_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
+            self.preference_index = expect_carbon * distance_damp_rate ** distance2target + base - cost
             # print(self.preference_index)
 
     def check_validity(self):
@@ -487,8 +503,10 @@ class PlanterRobTreePlan(PlanterPlan):
         if not isinstance(self.target, Cell):
             return False
         
-        # if self.target.tree is None:
-        #    return False
+        if self.target.tree is None:
+           return False
+        if self.target.tree.player_id == self.source_agent.player_id:
+            return False
         # if self.target.tree.player_id == self.source_agent.player_id:
         #    return False
         
@@ -510,17 +528,7 @@ class PlanterPlantTreePlan(PlanterPlan):
                 'mask_preference_index']
         else:
             distance2target = self.get_distance2target()
-            my_id = self.source_agent.player_id  # 我方玩家id
-            worker_dict = self.planning_policy.game_state['board'].workers  # 地图所有的 Planter & Collector
-            min_distance = 100000  # 目标单元格附近最近的敌人到该单元格的距离，具体怎么使用待定
-            target_position = self.target.position
-            for work_id, cur_worker in worker_dict.items():
-                if cur_worker.player_id != my_id:  # 敌方worker
-                    cur_pos = cur_worker.position
-                    cur_dis = self.planning_policy.get_distance(target_position[0], target_position[1],
-                                                                cur_pos[0], cur_pos[1])
-                    if cur_dis < min_distance:
-                        min_distance = cur_dis
+            min_distance = self.get_nearest_oppo_distance()
             # 到这里为止，算出来的 min_distance 是距离敌方worker的最近距离
             cur_json = self.planning_policy.config['enabled_plans']['PlanterPlantTreePlan']
             # w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
@@ -548,8 +556,12 @@ class PlanterPlantTreePlan(PlanterPlan):
             # total_predict_carbon = get_cell_carbon_after_n_step(board, self.target.position, distance2target)
             total_predict_carbon = self.get_total_carbon(distance2target)
             # carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target) * (min_distance - distance2target) * fuzzy_value
-            carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target)
-            self.preference_index = carbon_expectation
+            # carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target)
+            age_can_use = min(50 - distance2target - 1, min_distance)
+            cost = self.get_actual_plant_cost()
+            base = 1000
+            carbon_expectation = 2 * sum([total_predict_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
+            self.preference_index = carbon_expectation * (distance_damp_rate ** distance2target) + base - cost
 
                     
     def translate_to_action(self):
@@ -896,11 +908,12 @@ class PlanningPolicy(BasePolicy):
                 'PlanterRobTreePlan': {
                     'enabled': True,
                     'cell_carbon_weight': 1,
-                    'cell_distance_weight': -7
+                    'cell_distance_weight': -7,
+                    'distance_damp_rate': 0.999
                 },
                 # 种树员 种树计划
                 'PlanterPlantTreePlan': {
-                    'enabled': False,
+                    'enabled': True,
                     'cell_carbon_weight': 50,  # cell碳含量所占权重
                     'cell_distance_weight': -40,  # 与目标cell距离所占权重
                     'enemy_min_distance_weight': 50,  # 与敌方worker最近距离所占权重
