@@ -33,6 +33,12 @@ WorkerDirections = np.stack([np.array((0, 0)),
                              np.array((0, -1)),
                              np.array((-1, 0))])  # 与WorkerActions相对应
 
+Action2Direction = {None: np.array((0, 0)),
+                    WorkerAction.UP: np.array((0, 1)),
+                    WorkerAction.RIGHT: np.array((1, 0)),
+                    WorkerAction.DOWN: np.array((0, -1)),
+                    WorkerAction.LEFT: np.array((-1, 0))
+                    }
 
 def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
     # 计算position这个位置的碳含量在n步之后的预估数值（考虑上下左右四个位置的树的影响）
@@ -279,20 +285,20 @@ class PlanterPlan(BasePlan):
         return yes_it_is
         
     def get_distance2target(self):
-        source_posotion = self.source_agent.position
+        source_position = self.source_agent.position
         target_position = self.target.position
         distance = self.planning_policy.get_distance(
-            source_posotion[0], source_posotion[1], target_position[0],
+            source_position[0], source_position[1], target_position[0],
             target_position[1])
         return distance
 
     def get_total_carbon(self, distance=0):
-        target_carbon_except = 0
+        target_carbon_expect = 0
         for c in [self.target.up, self.target.left, self.target.right, self.target.down]:
-            target_carbon_except += get_cell_carbon_after_n_step(self.planning_policy.game_state['board'],
+            target_carbon_expect += get_cell_carbon_after_n_step(self.planning_policy.game_state['board'],
                                                         c.position,
                                                         distance + 1)        
-        return target_carbon_except
+        return target_carbon_expect
 
     
     # 根据未来走过去的步数n，计算n步之后目标位置的碳含量
@@ -326,11 +332,10 @@ class PlanterPlan(BasePlan):
                           action_cell.right.collector]
 
             for worker in collectors:
-                if worker is None:
-                    continue
-                # if worker.player_id == self.source_agent.player_id:
-                #     continue
-                return False
+                if worker:
+                    if worker.player_id == self.source_agent.player_id:
+                        continue
+                    return False
             
             return True
         else:
@@ -346,6 +351,20 @@ class PlanterPlan(BasePlan):
             return configuration.recPlanterCost + configuration.plant_cost_inflation_base * configuration.plant_cost_inflation_ratio**self.planning_policy.game_state[
                 'board'].trees.__len__()
 
+    def get_random_direction(self, waiting_list):
+        old_position = self.source_agent.cell.position
+        shuffle(waiting_list)
+        for action in waiting_list:
+            new_position = (
+                (Action2Direction[action][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
+                (Action2Direction[action][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+            )
+            if self.can_action(new_position):
+                return action, new_position
+        return None, old_position
+
+
+
     def translate_to_action_first(self):
         # 如果当前已经到达目标单元格，并且满足移动条件
         if self.source_agent.cell == self.target:
@@ -354,8 +373,9 @@ class PlanterPlan(BasePlan):
             if self.can_action(self.target.position):
                 return None, self.target.position
             else:
-                # TODO: 这个地方得改，如果已经达到目的位置，但又不满足 action 的条件，怎么办？
-                return None, self.target.position
+                waiting_list = WorkerActions[1:] # 没有None
+                return self.get_random_direction(waiting_list)
+                
         else:
             old_position = self.source_agent.cell.position
             old_distance = self.planning_policy.get_distance(
@@ -365,17 +385,19 @@ class PlanterPlan(BasePlan):
             move_list = []
 
             for i, action in enumerate(WorkerActions):
-                if action == None:
-                    continue
-                new_position = (
-                    (WorkerDirections[i][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
-                    (WorkerDirections[i][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
-                )
-                new_distance = self.planning_policy.get_distance(
-                    new_position[0], new_position[1], self.target.position[0],
-                    self.target.position[1])
                 rand_factor = randint(0, 100)
-                move_list.append((action, new_position, new_distance, rand_factor))
+                if action == None:
+                    move_list.append((None, self.source_agent.cell.position, old_distance, rand_factor))
+                else:
+                    new_position = (
+                        (WorkerDirections[i][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
+                        (WorkerDirections[i][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+                    )
+                    new_distance = self.planning_policy.get_distance(
+                        new_position[0], new_position[1], self.target.position[0],
+                        self.target.position[1])
+                    
+                    move_list.append((action, new_position, new_distance, rand_factor))
 
             move_list = sorted(move_list, key=lambda x: x[2: 4])
 
@@ -387,28 +409,27 @@ class PlanterPlan(BasePlan):
 
     def translate_to_action_second(self, cash):
         action, position = self.translate_to_action_first()
-        old_position = self.source_agent.cell.position
         if action is None:
-            # 钱不够
+            # 钱不够，要动起来，策略是随机动
             if self.planning_policy.game_state[
                'our_player'].cash < cash:
-                waiting_list = copy.deepcopy(WorkerActions)  # 重新copy一份 WorkerActions
-                waiting_list.append(None)  # 两倍的概率继续None
-                shuffle(waiting_list)
-                for i, action in enumerate(waiting_list):
-                    if action is None:
-                        self.planning_policy.global_position_mask[self.target.position] = 1
-                        return None
-                    new_position = (
-                        (WorkerDirections[i][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
-                        (WorkerDirections[i][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
-                    )
-                    if self.can_action(new_position):
-                        self.planning_policy.global_position_mask[new_position] = 1
-                        return action
-        else:
-            self.planning_policy.global_position_mask[position] = 1
-            return action
+                waiting_list = copy.deepcopy(WorkerActions[1:])  # 重新copy一份 WorkerActions
+                # waiting_list.append(None)  # 两倍的概率继续None
+                action, position = self.get_random_direction(waiting_list)
+                # for i, action in enumerate(waiting_list):
+                #     if action is None:
+                #         self.planning_policy.global_position_mask[position] = 1
+                #         return None
+                #     new_position = (
+                #         (WorkerDirections[i][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
+                #         (WorkerDirections[i][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+                #     )
+                #     if self.can_action(new_position):
+                #         self.planning_policy.global_position_mask[new_position] = 1
+                #         return action
+                # self.planning_policy.global_position_mask[position] = 1
+        self.planning_policy.global_position_mask[position] = 1
+        return action
 
 
     def get_tree_absorb_carbon_speed_at_cell(self, cell: Cell):
@@ -447,7 +468,7 @@ class PlanterRobTreePlan(PlanterPlan):
             #             'enabled_plans']['PlanterRobTreePlan'][
             #                 'cell_distance_weight']
             total_carbon = self.get_total_carbon(distance)
-
+            # total_carbon = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], self.target.position, distance)
             nearest_oppo_planter_distance = 10000
             age_can_use = min(50 - self.target.tree.age - distance - 1, nearest_oppo_planter_distance)
             self.preference_index = 2 * sum([total_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
@@ -472,7 +493,7 @@ class PlanterRobTreePlan(PlanterPlan):
         return True
 
     def translate_to_action(self):
-        return self.translate_to_action_second(20)
+        return self.translate_to_action_second(20 + 30)
 
 
 class PlanterPlantTreePlan(PlanterPlan):
@@ -522,15 +543,15 @@ class PlanterPlantTreePlan(PlanterPlan):
             carbon_growth_rate =cur_json['carbon_growth_rate']
 
             board = self.planning_policy.game_state['board']
-            total_predict_carbon = get_cell_carbon_after_n_step(board, self.target.position, distance2target)
-
+            # total_predict_carbon = get_cell_carbon_after_n_step(board, self.target.position, distance2target)
+            total_predict_carbon = self.get_total_carbon(distance2target)
             # carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target) * (min_distance - distance2target) * fuzzy_value
             carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target)
             self.preference_index = carbon_expectation
 
                     
     def translate_to_action(self):
-        return self.translate_to_action_second(self.get_actual_plant_cost())
+        return self.translate_to_action_second(self.get_actual_plant_cost() + 30)
 
             
     def check_validity(self):
