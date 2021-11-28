@@ -89,6 +89,8 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
         start = 50 - board.cells[position].tree.age + 1
         if start <= n:
             c = 30.0
+        else:
+            return 0
             
     # 对于每一回合，分别计算有几颗树在吸position的碳
     for i in range(start, n):
@@ -106,7 +108,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
             c = c * (1 - 0.0375 * tree_count)
             # c = c * (1 - 0.0375) ** tree_count
         c = min(c, 100)
-    return c        
+    return c  
 
 
 policy=PlanningPolicy()
