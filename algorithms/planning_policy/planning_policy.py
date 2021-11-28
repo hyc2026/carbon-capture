@@ -286,8 +286,13 @@ class PlanterPlan(BasePlan):
             target_position[1])
         return distance
 
-    def get_total_carbon(self):
-        return self.target.up.carbon + self.target.down.carbon + self.target.left.carbon + self.target.right.carbon
+    def get_total_carbon(self, distance=0):
+        target_carbon_except = 0
+        for c in [self.target.up, self.target.left, self.target.right, self.target.down]:
+            target_carbon_except += get_cell_carbon_after_n_step(self.planning_policy.game_state['board'],
+                                                        c.position,
+                                                        distance + 1)        
+        return target_carbon_except
 
     
     # 根据未来走过去的步数n，计算n步之后目标位置的碳含量
@@ -414,11 +419,12 @@ class PlanterRobTreePlan(PlanterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
+            distance = self.get_distance2target()
             if self.target.tree is None:
-                self.preference_index = 0.0001
+                self.preference_index = self.get_total_carbon(distance) / 400
                 return
             if self.target.tree.player_id == self.source_agent.player_id:
-                self.preference_index = 0.0001
+                self.preference_index = 0.00001
                 return 
 
             # source_posotion = self.source_agent.position
@@ -433,8 +439,12 @@ class PlanterRobTreePlan(PlanterPlan):
             #         'cell_carbon_weight'] + distance * self.planning_policy.config[
             #             'enabled_plans']['PlanterRobTreePlan'][
             #                 'cell_distance_weight']
-            total_carbon = self.get_total_carbon()
-            self.preference_index = total_carbon * 0.9625 ** distance
+            total_carbon = self.get_total_carbon(distance)
+
+            nearest_oppo_planter_distance = 10000
+            age_can_use = min(50 - self.target.tree.age - distance - 1, nearest_oppo_planter_distance)
+            self.preference_index = 2 * sum([total_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
+            
             # print(self.preference_index)
 
     def check_validity(self):
@@ -448,10 +458,10 @@ class PlanterRobTreePlan(PlanterPlan):
         if not isinstance(self.target, Cell):
             return False
         
-        if self.target.tree is None:
-           return False
-        if self.target.tree.player_id == self.source_agent.player_id:
-           return False
+        #if self.target.tree is None:
+        #   return False
+        #if self.target.tree.player_id == self.source_agent.player_id:
+        #   return False
         
         return True
 
