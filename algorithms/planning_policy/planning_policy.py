@@ -296,6 +296,7 @@ class PlanterPlan(BasePlan):
 
     
     # 根据未来走过去的步数n，计算n步之后目标位置的碳含量
+    # TODO: 这个函数有问题，已经有新的函数了，这个可以删除
     def get_total_carbon_predicted(self, step_number, carbon_growth_rate):
         target_sorrounding_cells = [self.target.up, self.target.down, self.target.left, self.target.right]
         total_carbon = 0
@@ -341,13 +342,20 @@ class PlanterPlan(BasePlan):
         if len(self.planning_policy.game_state['our_player'].tree_ids) == 0:
             return configuration.recPlanterCost
         else:
-            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
+            # 当该玩家有树的时候，种树的成本会越来越高
+            return configuration.recPlanterCost + configuration.plant_cost_inflation_base * configuration.plant_cost_inflation_ratio**self.planning_policy.game_state[
                 'board'].trees.__len__()
 
     def translate_to_action_first(self):
-        if self.source_agent.cell == self.target and self.can_action(self.target.position):
+        # 如果当前已经到达目标单元格，并且满足移动条件
+        if self.source_agent.cell == self.target:
             # self.planning_policy.global_position_mask[self.target.position] = 1
-            return None, self.target.position
+            # 站着不动（行为就是种树 / 抢树）
+            if self.can_action(self.target.position):
+                return None, self.target.position
+            else:
+                # TODO: 这个地方得改，如果已经达到目的位置，但又不满足 action 的条件，怎么办？
+                return None, self.target.position
         else:
             old_position = self.source_agent.cell.position
             old_distance = self.planning_policy.get_distance(
@@ -378,15 +386,14 @@ class PlanterPlan(BasePlan):
             return None, old_position
 
     def translate_to_action_second(self, cash):
-        cur, position = self.translate_to_action_first()
+        action, position = self.translate_to_action_first()
         old_position = self.source_agent.cell.position
-        if cur is None:
+        if action is None:
             # 钱不够
             if self.planning_policy.game_state[
                'our_player'].cash < cash:
-                waiting_list = WorkerActions[0:]
-                # 两倍的概率继续None
-                waiting_list.append(None)
+                waiting_list = copy.deepcopy(WorkerActions)  # 重新copy一份 WorkerActions
+                waiting_list.append(None)  # 两倍的概率继续None
                 shuffle(waiting_list)
                 for i, action in enumerate(waiting_list):
                     if action is None:
@@ -401,7 +408,7 @@ class PlanterPlan(BasePlan):
                         return action
         else:
             self.planning_policy.global_position_mask[position] = 1
-            return cur
+            return action
 
 
     def get_tree_absorb_carbon_speed_at_cell(self, cell: Cell):
@@ -444,7 +451,6 @@ class PlanterRobTreePlan(PlanterPlan):
             nearest_oppo_planter_distance = 10000
             age_can_use = min(50 - self.target.tree.age - distance - 1, nearest_oppo_planter_distance)
             self.preference_index = 2 * sum([total_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
-            
             # print(self.preference_index)
 
     def check_validity(self):
@@ -458,10 +464,10 @@ class PlanterRobTreePlan(PlanterPlan):
         if not isinstance(self.target, Cell):
             return False
         
-        #if self.target.tree is None:
-        #   return False
-        #if self.target.tree.player_id == self.source_agent.player_id:
-        #   return False
+        # if self.target.tree is None:
+        #    return False
+        # if self.target.tree.player_id == self.source_agent.player_id:
+        #    return False
         
         return True
 
@@ -473,6 +479,7 @@ class PlanterPlantTreePlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
+        self.planning_policy = planning_policy
     
     def calculate_score(self):
         if self.check_validity() == False:
@@ -482,12 +489,12 @@ class PlanterPlantTreePlan(PlanterPlan):
             distance2target = self.get_distance2target()
             my_id = self.source_agent.player_id  # 我方玩家id
             worker_dict = self.planning_policy.game_state['board'].workers  # 地图所有的 Planter & Collector
-            min_distance = 100000
-            source_position = self.source_agent.position
+            min_distance = 100000  # 目标单元格附近最近的敌人到该单元格的距离，具体怎么使用待定
+            target_position = self.target.position
             for work_id, cur_worker in worker_dict.items():
                 if cur_worker.player_id != my_id:  # 敌方worker
                     cur_pos = cur_worker.position
-                    cur_dis = self.planning_policy.get_distance(source_position[0], source_position[1],
+                    cur_dis = self.planning_policy.get_distance(target_position[0], target_position[1],
                                                                 cur_pos[0], cur_pos[1])
                     if cur_dis < min_distance:
                         min_distance = cur_dis
@@ -513,16 +520,13 @@ class PlanterPlantTreePlan(PlanterPlan):
             distance_damp_rate = cur_json['distance_damp_rate']
             fuzzy_value = cur_json['fuzzy_value']
             carbon_growth_rate =cur_json['carbon_growth_rate']
-            total_predict_carbon = self.get_total_carbon_predicted(distance2target, carbon_growth_rate)
-            cur_index = total_predict_carbon * (distance_damp_rate ** distance2target) * (min_distance - distance2target) * fuzzy_value
-            surroundings = [self.target.up, self.target.down, self.target.left, self.target.right]
-            damp_count = 0
-            for su in surroundings:
-                cur_list = [su.up, su.down, su.left, su.down]
-                for eve in cur_list:
-                    if eve.tree:
-                        damp_count += 1
-            self.preference_index = cur_index * (1 - tree_damp_rate * damp_count)
+
+            board = self.planning_policy.game_state['board']
+            total_predict_carbon = get_cell_carbon_after_n_step(board, self.target.position, distance2target)
+
+            # carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target) * (min_distance - distance2target) * fuzzy_value
+            carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target)
+            self.preference_index = carbon_expectation
 
                     
     def translate_to_action(self):
@@ -878,7 +882,7 @@ class PlanningPolicy(BasePolicy):
                     'cell_distance_weight': -40,  # 与目标cell距离所占权重
                     'enemy_min_distance_weight': 50,  # 与敌方worker最近距离所占权重
                     'tree_damp_rate': 0.08,  # TODO: 这个系数是代表什么？
-                    'distance_damp_rate': 0.999,
+                    'distance_damp_rate': 0.999,  # 距离越远，其实越不划算，性价比衰减率
                     'fuzzy_value': 2,
                     'carbon_growth_rate': 0.05
                 },
