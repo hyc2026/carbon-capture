@@ -778,7 +778,7 @@ class PlanningPolicy(BasePolicy):
         #这里是策略的晁灿
         self.config = {
             'enabled_plans': {
-                #recrtCenter plans
+                # 基地 招募种树员计划
                 'RecrtCenterSpawnPlanterPlan': {
                     'enabled': True,
                     'planter_count_weight':-8,
@@ -787,6 +787,7 @@ class PlanningPolicy(BasePolicy):
                     # 'constant_weight':,
                     # 'denominator_weight':
                 },
+                # 基地 招募捕碳员计划
                 'RecrtCenterSpawnCollectorPlan': {
                     'enabled': True,
                     'planter_count_weight':8,
