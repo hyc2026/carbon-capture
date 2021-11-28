@@ -34,6 +34,52 @@ WorkerDirections = np.stack([np.array((0, 0)),
                              np.array((-1, 0))])  # 与WorkerActions相对应
 
 
+def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
+    # 危险区域中如果有树会对position造成影响
+    danger_zone = []
+    x_left = position.x - 1 if position.x > 0 else 14
+    x_right = position.x + 1 if position.x < 14 else 0
+    y_up = position.y - 1 if position.y > 0 else 14
+    y_down = position.y + 1 if position.y < 14 else 0
+    # danger_zone.append(Point(x_left, y_up))
+    danger_zone.append(Point(position.x, y_up))
+    # danger_zone.append(Point(x_right, y_up))
+    danger_zone.append(Point(x_left, position.y))
+    danger_zone.append(Point(x_right, position.y))
+    # danger_zone.append(Point(x_left, y_down))
+    danger_zone.append(Point(position.x, y_down))
+    # danger_zone.append(Point(x_right, y_down))
+    
+    start = 0
+    c = board.cells[position].carbon
+    if n == 0:
+        return c
+        # position的位置有树，直接从树暴毙之后开始算
+    if board.cells[position].tree is not None:
+        start = 50 - board.cells[position].tree.age + 1
+        if start <= n:
+            c = 30.0
+        else:
+            return 0
+            
+    # 对于每一回合，分别计算有几颗树在吸position的碳
+    for i in range(start, n):
+        tree_count = 0
+        for p in danger_zone:
+            tree = board.cells[p].tree
+            # 树在危险区域内
+            if tree is not None:
+                # i回合后树还没暴毙
+                if tree.age + i <= 50:
+                    tree_count += 1
+        if tree_count == 0:
+            c = c * (1.05)
+        else:
+            c = c * (1 - 0.0375 * tree_count)
+            # c = c * (1 - 0.0375) ** tree_count
+        c = min(c, 100)
+    return c  
+
 class BasePolicy:
     """
     Base policy class that wraps actor and critic models to calculate actions and value for training and evaluating.
@@ -510,7 +556,7 @@ class CollectorPlan(BasePlan):
                 if collector.player_id == self.source_agent.player_id:
                     continue
                 if collector.carbon <= self.source_agent.carbon:
-                    return False
+                    return False  
             return True
         else:
             return False
@@ -601,7 +647,9 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
 
-            self.preference_index = min(self.target.carbon * (1.05 ** distance) / (distance + 1), 100)
+            self.preference_index = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], 
+                                                                self.target.position,
+                                                                distance) / (distance + 1)
             
     
     def translate_to_action(self):
@@ -657,9 +705,13 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
                 target_position[1])
 
             if target_center_distance + source_target_distance == source_center_distance:
-                self.preference_index = min(self.target.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) + 100
+                self.preference_index = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], 
+                                                                    self.target.position,
+                                                                    source_target_distance) / (source_target_distance + 1) + 100
             else:
-                self.preference_index = min(self.target.carbon * (1.05 ** source_target_distance) / (source_target_distance + 1), 100) - 100
+                self.preference_index = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], 
+                                                                    self.target.position,
+                                                                    source_target_distance) / (source_target_distance + 1) - 100
 
     def translate_to_action(self):
         return super().translate_to_action() 
@@ -808,7 +860,7 @@ class PlanningPolicy(BasePolicy):
                 },
                 # 种树员 种树计划
                 'PlanterPlantTreePlan': {
-                    'enabled': True,
+                    'enabled': False,
                     'cell_carbon_weight': 50,
                     'cell_distance_weight': -40,
                     'enemy_min_distance_weight': 50,
