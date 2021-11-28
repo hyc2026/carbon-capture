@@ -1,15 +1,12 @@
-from os import cpu_count
 import sys
 import numpy as np
-from numpy import nested_iters, positive
 
 sys.path.append('.')
 sys.path.append('..')
 sys.path.append('../..')
 import copy
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple, final
-from math import log, exp
+from typing import Dict, Tuple
 
 from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter, Worker,
@@ -484,7 +481,7 @@ class PlanterRobTreePlan(PlanterPlan):
             distance_damp_rate = cur_json['distance_damp_rate']
             # total_carbon = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], self.target.position, distance)
             nearest_oppo_planter_distance = self.get_nearest_oppo_distance()
-            print(nearest_oppo_planter_distance)
+            # print(nearest_oppo_planter_distance)
             age_can_use = min(50 - self.target.tree.age - distance2target - 1, nearest_oppo_planter_distance)
             cost = 20
             base = 1000
