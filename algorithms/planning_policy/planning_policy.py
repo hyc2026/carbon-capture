@@ -119,7 +119,7 @@ class RecrtCenterPlan(BasePlan):
 
 
 # 这个Plan是指转化中心招募种树者
-class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
+class SpawnPlanterPlan(RecrtCenterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -135,14 +135,14 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
         else:
             self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
             self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
-            self.preference_index =  (self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['planter_count_weight'] * self_planters_count \
-                + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnPlanterPlan']['collector_count_weight'] * self_collectors_count \
+            self.preference_index =  (self.planning_policy.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight'] * self_planters_count \
+                + self.planning_policy.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight'] * self_collectors_count \
                 + 1) / 1000
 
     def check_validity(self):
         #没有开启
         if self.planning_policy.config['enabled_plans'][
-                'RecrtCenterSpawnPlanterPlan']['enabled'] == False:
+                'SpawnPlanterPlan']['enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
@@ -173,7 +173,7 @@ class RecrtCenterSpawnPlanterPlan(RecrtCenterPlan):
             return None
 
 # 这个Plan是指转化中心招募捕碳者
-class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
+class SpawnCollectorPlan(RecrtCenterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -189,14 +189,14 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
         else:
             self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
             self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
-            self.preference_index =  (self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['planter_count_weight'] * self_planters_count \
-                + self.planning_policy.config['enabled_plans']['RecrtCenterSpawnCollectorPlan']['collector_count_weight'] * self_collectors_count \
+            self.preference_index =  (self.planning_policy.config['enabled_plans']['SpawnCollectorPlan']['planter_count_weight'] * self_planters_count \
+                + self.planning_policy.config['enabled_plans']['SpawnCollectorPlan']['collector_count_weight'] * self_collectors_count \
                     + 1) / 1000 + 0.0001
 
     def check_validity(self):
         #没有开启
         if self.planning_policy.config['enabled_plans'][
-                'RecrtCenterSpawnCollectorPlan']['enabled'] == False:
+                'SpawnCollectorPlan']['enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
@@ -783,7 +783,7 @@ class PlanningPolicy(BasePolicy):
                 # 基地 招募种树员计划
                 # enabled 为 true 表示运行时会考虑该策略
                 # 以下plan同理
-                'RecrtCenterSpawnPlanterPlan': {
+                'SpawnPlanterPlan': {
                     'enabled': True,
                     'planter_count_weight':-8,
                     'collector_count_weight':2,
@@ -792,7 +792,7 @@ class PlanningPolicy(BasePolicy):
                     # 'denominator_weight':
                 },
                 # 基地 招募捕碳员计划
-                'RecrtCenterSpawnCollectorPlan': {
+                'SpawnCollectorPlan': {
                     'enabled': True,
                     'planter_count_weight':8,
                     'collector_count_weight':-2,
@@ -922,9 +922,9 @@ class PlanningPolicy(BasePolicy):
 
             for recrtCenter in self.game_state['our_player'].recrtCenters:
                 #TODO:动态地load所有的recrtCenterPlan类
-                plan = RecrtCenterSpawnPlanterPlan(recrtCenter, cell, self)
+                plan = SpawnPlanterPlan(recrtCenter, cell, self)
                 plans.append(plan)
-                plan = RecrtCenterSpawnCollectorPlan(recrtCenter, cell, self)
+                plan = SpawnCollectorPlan(recrtCenter, cell, self)
                 plans.append(plan)
             pass
         pass
