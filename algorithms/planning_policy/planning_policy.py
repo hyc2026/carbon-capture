@@ -305,8 +305,8 @@ class PlanterGoToAndPlantTreePlan(PlanterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            total_carbon = log(self.get_total_carbon() + 1)
-            distance1 = log(self.get_distance2target() + 1)
+            total_carbon = self.get_total_carbon()
+            distance1 = self.get_distance2target()
             cur_id = self.source_agent.player_id
             worker_dict = self.planning_policy.game_state['board'].workers
             distance2 = 100000
@@ -325,10 +325,25 @@ class PlanterGoToAndPlantTreePlan(PlanterPlan):
             #         'cell_distance_weight': -40,
             #         'enemy_min_distance_weight': 50
             #     },
-            distance2 = log(distance2 + 1)
+            distance2 = distance2
             cur_json = self.planning_policy.config['enabled_plans']['PlanterGoToAndPlantTreePlan']
-            w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
-            self.preference_index = exp(total_carbon * w0 + distance1 * w1 + distance2 * w2)
+            # w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
+            # 'tree_damp_rate': 0.08,
+            # 'distance_damp_rate': 0.999
+            # self.preference_index = exp(total_carbon * w0 + distance1 * w1 + distance2 * w2)
+            tree_damp_rate = cur_json['tree_damp_rate']
+            distance_damp_rate = cur_json['distance_damp_rate']
+            fuzzy_value = cur_json['fuzzy_value']
+            cur_index = total_carbon * (distance_damp_rate ** distance1) * (distance2 - distance1) * fuzzy_value
+            surroundings = [self.target.up, self.target.down, self.target.left, self.target.right]
+            damp_count = 0
+            for su in surroundings:
+                cur_list = [su.up, su.down, su.left, su.down]
+                for eve in cur_list:
+                    if eve.tree:
+                        damp_count += 1
+            self.preference_index = cur_index * (1 - tree_damp_rate * damp_count)
+
                     
 
 
@@ -669,7 +684,10 @@ class PlanningPolicy(BasePolicy):
                     'enabled': True,
                     'cell_carbon_weight': 50,
                     'cell_distance_weight': -40,
-                    'enemy_min_distance_weight': 50
+                    'enemy_min_distance_weight': 50,
+                    'tree_damp_rate': 0.08,
+                    'distance_damp_rate': 0.999,
+                    'fuzzy_value': 2
                 },
                 #Collector plans
                 'CollectorGoToAndCollectCarbonPlan': {
