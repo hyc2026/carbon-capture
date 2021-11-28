@@ -9,14 +9,14 @@ sys.path.append('../..')
 import copy
 from abc import ABC, ABCMeta, abstractmethod
 from typing import Dict, OrderedDict, Tuple
-
+from math import log, exp
 from algorithms.base_policy import BasePolicy
 from envs.obs_parser_xinnian import (BaseActions, ObservationParser,
                                      WorkerActions, WorkerDirections)
 from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter, Worker,
                                              RecrtCenterAction, WorkerAction)
-
+from random import randint
 
 
 # Plan是一个Agent行动的目标，它可以由一个Action完成(比如招募捕碳者），也可以由多
@@ -153,11 +153,24 @@ class RecrtCenterSpawnCollectorPlan(RecrtCenterPlan):
 class PlanterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
+        # self.num_of_trees = len(self.planning_policy.game_state['board'].trees())
 
     def check_valid(self):
         yes_it_is = isinstance(self.source_agent, Planter)
         return yes_it_is
         
+    def get_distance2target(self):
+        source_posotion = self.source_agent.position
+        target_position = self.target.position
+        distance = self.planning_policy.get_distance(
+            source_posotion[0], source_posotion[1], target_position[0],
+            target_position[1])
+        return distance
+
+    def get_total_carbon(self):
+        return self.target.up.carbon + self.target.down.carbon + self.target.left.carbon + self.target.right.carbon
+
+    
     def can_action(self, action_position):
         if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
             action_cell = self.planning_policy.game_state['board']._cells[action_position]
@@ -169,12 +182,13 @@ class PlanterPlan(BasePlan):
                           action_cell.left.collector,
                           action_cell.right.collector]
 
-            for collector in collectors:
-                if collector is None:
+            for worker in collectors:
+                if worker is None:
                     continue
-                if collector.player_id == self.source_agent.player_id:
+                if worker.player_id == self.source_agent.player_id:
                     continue
                 return False
+            
             return True
         else:
             return False
@@ -187,60 +201,6 @@ class PlanterPlan(BasePlan):
         else:
             return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
                 'board'].trees.__len__()
-
-    def get_tree_absorb_carbon_speed_at_cell(self, cell: Cell):
-        pass
-
-
-class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
-    def __init__(self, source_agent, target, planning_policy):
-        super().__init__(source_agent, target, planning_policy)
-        self.calculate_score()
-
-    def calculate_score(self):
-        if self.check_validity() == False:
-            self.preference_index = self.planning_policy.config[
-                'mask_preference_index']
-        else:
-            if self.target.tree is None:
-                self.preference_index = 0.0001
-                return
-            if self.target.tree.player_id == self.source_agent.player_id:
-                self.preference_index = 0.0001
-                return 
-
-            source_posotion = self.source_agent.position
-            target_position = self.target.position
-            distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], target_position[0],
-                target_position[1])
-
-            self.preference_index = (50 - self.target.tree.age) * self.planning_policy.config[
-                'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
-                    'cell_carbon_weight'] + distance * self.planning_policy.config[
-                        'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
-                            'cell_distance_weight']
-
-    def check_validity(self):
-        #没有开启
-        if self.planning_policy.config['enabled_plans'][
-                'PlanterGoToAndPlantTreeAtTreeAtPlan']['enabled'] == False:
-            return False
-        #类型不对
-        if not isinstance(self.source_agent, Planter):
-            return False
-        if not isinstance(self.target, Cell):
-            return False
-        
-        #if self.target.tree is None:
-        #    return False
-        #if self.target.tree.player_id == self.source_agent.player_id:
-        #    return False
-        #钱不够
-        #if self.planning_policy.game_state[
-        #        'our_player'].cash < self.get_actual_plant_cost():
-        #    return False
-        return True
 
     def translate_to_action(self):
         if self.source_agent.cell == self.target and self.can_action(self.target.position):
@@ -264,15 +224,129 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
                 new_distance = self.planning_policy.get_distance(
                     new_position[0], new_position[1], self.target.position[0],
                     self.target.position[1])
-                move_list.append((action, new_position, new_distance))
+                rand_factor = randint(0, 100)
+                move_list.append((action, new_position, new_distance, rand_factor))
 
-            move_list = sorted(move_list, key=lambda x: x[2])
+            move_list = sorted(move_list, key=lambda x: x[2: 4])
 
-            for move, new_position, new_d in move_list:
+            for move, new_position, new_d, _ in move_list:
                 if self.can_action(new_position):
                     self.planning_policy.global_position_mask[new_position] = 1
                     return move
             return None
+
+    def get_tree_absorb_carbon_speed_at_cell(self, cell: Cell):
+        pass
+
+
+class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            if self.target.tree is None:
+                self.preference_index = 0.0001
+                return
+            if self.target.tree.player_id == self.source_agent.player_id:
+                self.preference_index = 0.0001
+                return 
+
+            # source_posotion = self.source_agent.position
+            # target_position = self.target.position
+            # distance = self.planning_policy.get_distance(
+            #     source_posotion[0], source_posotion[1], target_position[0],
+            #     target_position[1])
+            distance = self.get_distance2target()
+
+            # self.preference_index = (50 - self.target.tree.age) * self.planning_policy.config[
+            #     'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
+            #         'cell_carbon_weight'] + distance * self.planning_policy.config[
+            #             'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
+            #                 'cell_distance_weight']
+            total_carbon = self.get_total_carbon()
+            self.preference_index = total_carbon * 0.9625 ** distance
+            print(self.preference_index)
+
+    def check_validity(self):
+        #没有开启
+        if self.planning_policy.config['enabled_plans'][
+                'PlanterGoToAndPlantTreeAtTreeAtPlan']['enabled'] == False:
+            return False
+        #类型不对
+        if not isinstance(self.source_agent, Planter):
+            return False
+        if not isinstance(self.target, Cell):
+            return False
+        
+        if self.target.tree is None:
+           return False
+        if self.target.tree.player_id == self.source_agent.player_id:
+           return False
+        #钱不够
+        # if self.planning_policy.game_state[
+        #        'our_player'].cash < 20:
+        #    return False
+        return True
+
+
+
+class PlanterGoToAndPlantTreePlan(PlanterPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+    
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.planning_policy.config[
+                'mask_preference_index']
+        else:
+            total_carbon = log(self.get_total_carbon() + 1)
+            distance1 = log(self.get_distance2target() + 1)
+            cur_id = self.source_agent.player_id
+            worker_dict = self.planning_policy.game_state['board'].workers
+            distance2 = 100000
+            source_position = self.source_agent.position
+            for k in worker_dict:
+                cur_worker = worker_dict[k]
+                if cur_worker.player_id != cur_id:
+                    cur_pos = cur_worker.position
+                    cur_dis = self.planning_policy.get_distance(source_position[0], source_position[1],
+                                                                cur_pos[0], cur_pos[1])
+                    if cur_dis < distance2:
+                        distance2 = cur_dis
+            # 'PlanterGoToAndPlantTreePlan': {
+            #         'enabled': True,
+            #         'cell_carbon_weight': 50,
+            #         'cell_distance_weight': -40,
+            #         'enemy_min_distance_weight': 50
+            #     },
+            distance2 = log(distance2 + 1)
+            cur_json = self.planning_policy.config['enabled_plans']['PlanterGoToAndPlantTreePlan']
+            w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
+            self.preference_index = exp(total_carbon * w0 + distance1 * w1 + distance2 * w2)
+                    
+
+
+            
+    def check_validity(self):
+        if self.planning_policy.config['enabled_plans'][
+                'PlanterGoToAndPlantTreePlan']['enabled'] == False:
+            return False
+        if self.target.tree:
+            return False
+        
+        # if self.planning_policy.game_state[
+        #        'our_player'].cash < self.get_actual_plant_cost():
+        #        return False
+        return True
+            
+
+
 
 
 class CollectorPlan(BasePlan):
@@ -591,6 +665,12 @@ class PlanningPolicy(BasePolicy):
                     'cell_carbon_weight': 1,
                     'cell_distance_weight': -7
                 },
+                'PlanterGoToAndPlantTreePlan': {
+                    'enabled': True,
+                    'cell_carbon_weight': 50,
+                    'cell_distance_weight': -40,
+                    'enemy_min_distance_weight': 50
+                },
                 #Collector plans
                 'CollectorGoToAndCollectCarbonPlan': {
                     'enabled': True
@@ -681,9 +761,11 @@ class PlanningPolicy(BasePolicy):
                 plan = (PlanterGoToAndPlantTreeAtTreeAtPlan(
                     planter, cell, self))
 
-
-                
                 plans.append(plan)
+                plan = (PlanterGoToAndPlantTreePlan(
+                    planter, cell, self))
+                plans.append(plan)
+
             for recrtCenter in self.game_state['our_player'].recrtCenters:
                 #TODO:动态地load所有的recrtCenterPlan类
                 plan = RecrtCenterSpawnPlanterPlan(recrtCenter, cell, self)
