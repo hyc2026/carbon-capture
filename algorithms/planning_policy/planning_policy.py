@@ -355,7 +355,8 @@ class PlanterPlan(BasePlan):
         pass
 
 
-class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
+# 种树员 抢树计划
+class PlanterRobTreePlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -380,9 +381,9 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
             distance = self.get_distance2target()
 
             # self.preference_index = (50 - self.target.tree.age) * self.planning_policy.config[
-            #     'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
+            #     'enabled_plans']['PlanterRobTreePlan'][
             #         'cell_carbon_weight'] + distance * self.planning_policy.config[
-            #             'enabled_plans']['PlanterGoToAndPlantTreeAtTreeAtPlan'][
+            #             'enabled_plans']['PlanterRobTreePlan'][
             #                 'cell_distance_weight']
             total_carbon = self.get_total_carbon()
             self.preference_index = total_carbon * 0.9625 ** distance
@@ -391,7 +392,7 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
     def check_validity(self):
         #没有开启
         if self.planning_policy.config['enabled_plans'][
-                'PlanterGoToAndPlantTreeAtTreeAtPlan']['enabled'] == False:
+                'PlanterRobTreePlan']['enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, Planter):
@@ -413,7 +414,7 @@ class PlanterGoToAndPlantTreeAtTreeAtPlan(PlanterPlan):
 
 
 
-class PlanterGoToAndPlantTreePlan(PlanterPlan):
+class PlanterPlantTreePlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
@@ -437,14 +438,14 @@ class PlanterGoToAndPlantTreePlan(PlanterPlan):
                                                                 cur_pos[0], cur_pos[1])
                     if cur_dis < distance2:
                         distance2 = cur_dis
-            # 'PlanterGoToAndPlantTreePlan': {
+            # 'PlanterPlantTreePlan': {
             #         'enabled': True,
             #         'cell_carbon_weight': 50,
             #         'cell_distance_weight': -40,
             #         'enemy_min_distance_weight': 50
             #     },
             distance2 = distance2
-            cur_json = self.planning_policy.config['enabled_plans']['PlanterGoToAndPlantTreePlan']
+            cur_json = self.planning_policy.config['enabled_plans']['PlanterPlantTreePlan']
             # w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
             # 'tree_damp_rate': 0.08,
             # 'distance_damp_rate': 0.999
@@ -471,7 +472,7 @@ class PlanterGoToAndPlantTreePlan(PlanterPlan):
             
     def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
-                'PlanterGoToAndPlantTreePlan']['enabled'] == False:
+                'PlanterPlantTreePlan']['enabled'] == False:
             return False
         if self.target.tree:
             return False
@@ -799,13 +800,14 @@ class PlanningPolicy(BasePolicy):
                     # 'constant_weight':,
                     # 'denominator_weight':
                 },
-                #Planter plans
-                'PlanterGoToAndPlantTreeAtTreeAtPlan': {
+                # 种树员 抢树计划
+                'PlanterRobTreePlan': {
                     'enabled': True,
                     'cell_carbon_weight': 1,
                     'cell_distance_weight': -7
                 },
-                'PlanterGoToAndPlantTreePlan': {
+                # 种树员 种树计划
+                'PlanterPlantTreePlan': {
                     'enabled': True,
                     'cell_carbon_weight': 50,
                     'cell_distance_weight': -40,
@@ -910,11 +912,11 @@ class PlanningPolicy(BasePolicy):
                 plans.append(plan)
 
             for planter in self.game_state['our_player'].planters:
-                plan = (PlanterGoToAndPlantTreeAtTreeAtPlan(
+                plan = (PlanterRobTreePlan(
                     planter, cell, self))
 
                 plans.append(plan)
-                plan = (PlanterGoToAndPlantTreePlan(
+                plan = (PlanterPlantTreePlan(
                     planter, cell, self))
                 plans.append(plan)
 
