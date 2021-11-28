@@ -78,7 +78,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
             c = c * (1 - 0.0375 * tree_count)
             # c = c * (1 - 0.0375) ** tree_count
         c = min(c, 100)
-    return c  
+    return c
 
 class BasePolicy:
     """
@@ -290,21 +290,23 @@ class PlanterPlan(BasePlan):
         return self.target.up.carbon + self.target.down.carbon + self.target.left.carbon + self.target.right.carbon
 
     
-    def get_total_carbon_predicted(self, future_step, grow_index):
-        cur_carbon = [self.target.up, self.target.down, self.target.left, self.target.right]
+    # 根据未来走过去的步数n，计算n步之后目标位置的碳含量
+    def get_total_carbon_predicted(self, step_number, carbon_growth_rate):
+        target_sorrounding_cells = [self.target.up, self.target.down, self.target.left, self.target.right]
         total_carbon = 0
-        for eve in cur_carbon:
-            cur_list = [eve.up, eve.down, eve.left, eve.right]
+        for cell in target_sorrounding_cells:
+            cur_list = [cell.up, cell.down, cell.left, cell.right]
             flag = 0
             for cur_pos in cur_list:
                 if cur_pos.tree:
                     flag = 1
                     break
             if flag:
-                total_carbon += eve.carbon * (1 + grow_index) ** future_step
+                total_carbon += cell.carbon * (1 + carbon_growth_rate) ** step_number
             else:
-                total_carbon += eve.carbon
+                total_carbon += cell.carbon
         return total_carbon
+
 
     def can_action(self, action_position):
         if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
@@ -456,9 +458,6 @@ class PlanterRobTreePlan(PlanterPlan):
     def translate_to_action(self):
         return self.translate_to_action_second(20)
 
-            
-
-
 
 class PlanterPlantTreePlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
@@ -470,38 +469,42 @@ class PlanterPlantTreePlan(PlanterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            # total_carbon = self.get_total_carbon()
-            distance1 = self.get_distance2target()
-            cur_id = self.source_agent.player_id
-            worker_dict = self.planning_policy.game_state['board'].workers
-            distance2 = 100000
+            distance2target = self.get_distance2target()
+            my_id = self.source_agent.player_id  # 我方玩家id
+            worker_dict = self.planning_policy.game_state['board'].workers  # 地图所有的 Planter & Collector
+            min_distance = 100000
             source_position = self.source_agent.position
-            for k in worker_dict:
-                cur_worker = worker_dict[k]
-                if cur_worker.player_id != cur_id:
+            for work_id, cur_worker in worker_dict.items():
+                if cur_worker.player_id != my_id:  # 敌方worker
                     cur_pos = cur_worker.position
                     cur_dis = self.planning_policy.get_distance(source_position[0], source_position[1],
                                                                 cur_pos[0], cur_pos[1])
-                    if cur_dis < distance2:
-                        distance2 = cur_dis
-            # 'PlanterPlantTreePlan': {
-            #         'enabled': True,
-            #         'cell_carbon_weight': 50,
-            #         'cell_distance_weight': -40,
-            #         'enemy_min_distance_weight': 50
-            #     },
-            distance2 = distance2
+                    if cur_dis < min_distance:
+                        min_distance = cur_dis
+            # 到这里为止，算出来的 min_distance 是距离敌方worker的最近距离
             cur_json = self.planning_policy.config['enabled_plans']['PlanterPlantTreePlan']
             # w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
             # 'tree_damp_rate': 0.08,
             # 'distance_damp_rate': 0.999
-            # self.preference_index = exp(total_carbon * w0 + distance1 * w1 + distance2 * w2)
+            # self.preference_index = exp(total_carbon * w0 + distance2target * w1 + min_distance * w2)
+
+            # 'PlanterPlantTreePlan': {
+            #     'enabled': True,
+            #     'cell_carbon_weight': 50,
+            #     'cell_distance_weight': -40,
+            #     'enemy_min_distance_weight': 50,
+            #     'tree_damp_rate': 0.08,
+            #     'distance_damp_rate': 0.999,
+            #     'fuzzy_value': 2,
+            #     'carbon_growth_rate': 0.05
+            # },
+
             tree_damp_rate = cur_json['tree_damp_rate']
             distance_damp_rate = cur_json['distance_damp_rate']
             fuzzy_value = cur_json['fuzzy_value']
-            growth_index =cur_json['growth_index']
-            total_predict_carbon = self.get_total_carbon_predicted(distance1, growth_index)
-            cur_index = total_predict_carbon * (distance_damp_rate ** distance1) * (distance2 - distance1) * fuzzy_value
+            carbon_growth_rate =cur_json['carbon_growth_rate']
+            total_predict_carbon = self.get_total_carbon_predicted(distance2target, carbon_growth_rate)
+            cur_index = total_predict_carbon * (distance_damp_rate ** distance2target) * (min_distance - distance2target) * fuzzy_value
             surroundings = [self.target.up, self.target.down, self.target.left, self.target.right]
             damp_count = 0
             for su in surroundings:
@@ -556,7 +559,7 @@ class CollectorPlan(BasePlan):
                 if collector.player_id == self.source_agent.player_id:
                     continue
                 if collector.carbon <= self.source_agent.carbon:
-                    return False  
+                    return False
             return True
         else:
             return False
@@ -861,13 +864,13 @@ class PlanningPolicy(BasePolicy):
                 # 种树员 种树计划
                 'PlanterPlantTreePlan': {
                     'enabled': False,
-                    'cell_carbon_weight': 50,
-                    'cell_distance_weight': -40,
-                    'enemy_min_distance_weight': 50,
-                    'tree_damp_rate': 0.08,
+                    'cell_carbon_weight': 50,  # cell碳含量所占权重
+                    'cell_distance_weight': -40,  # 与目标cell距离所占权重
+                    'enemy_min_distance_weight': 50,  # 与敌方worker最近距离所占权重
+                    'tree_damp_rate': 0.08,  # TODO: 这个系数是代表什么？
                     'distance_damp_rate': 0.999,
                     'fuzzy_value': 2,
-                    'growth_index': 0.05
+                    'carbon_growth_rate': 0.05
                 },
                 #Collector plans
                 # 捕碳者去全地图score最高的地方采集碳的策略
