@@ -82,7 +82,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
     
     start = 0
     c = board.cells[position].carbon
-    for _, tree in board.trees:
+    for _, tree in board.trees.items():
         # position的位置有树，直接从树暴毙之后开始算
         if tree.position == position:
             start = 50 - tree.age + 1
@@ -92,7 +92,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
     # 对于每一回合，分别计算有几颗树在吸position的碳
     for i in range(start, n):
         tree_count = 0
-        for _, tree in board.trees:
+        for _, tree in board.trees.items():
             # 树在危险区域内
             if tree.position in danger_zone:
                 # i回合后树还没暴毙
