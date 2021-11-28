@@ -348,7 +348,9 @@ class PlanterPlan(BasePlan):
             return configuration.recPlanterCost
         else:
             # 当该玩家有树的时候，种树的成本会越来越高
-            return configuration.recPlanterCost + configuration.plant_cost_inflation_base * configuration.plant_cost_inflation_ratio**self.planning_policy.game_state[
+            # i = configuration.plantCostInflationBase  # 1.235
+            # j = configuration.plantCostInflationRatio  # 5
+            return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase**self.planning_policy.game_state[
                 'board'].trees.__len__()
 
     def get_random_direction(self, waiting_list):
