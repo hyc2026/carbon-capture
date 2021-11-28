@@ -777,8 +777,11 @@ class PlanningPolicy(BasePolicy):
         super().__init__()
         #这里是策略的晁灿
         self.config = {
+            # 表示我们的策略库中有多少可使用的策略
             'enabled_plans': {
                 # 基地 招募种树员计划
+                # enabled 为 true 表示运行时会考虑该策略
+                # 以下plan同理
                 'RecrtCenterSpawnPlanterPlan': {
                     'enabled': True,
                     'planter_count_weight':-8,
@@ -813,24 +816,32 @@ class PlanningPolicy(BasePolicy):
                     'growth_index': 0.05
                 },
                 #Collector plans
+                # 捕碳者去全地图score最高的地方采集碳的策略
                 'CollectorGoToAndCollectCarbonPlan': {
                     'enabled': True
                 },
+                # 捕碳者碳携带的数量超过阈值后，打算回家，并且顺路去score高的地方采集碳
                 'CollectorGoToAndGoHomeWithCollectCarbonPlan': {
                     'enabled': True
                 },
+                # 捕碳者碳携带的数量超过阈值并且与家距离为1，那么就直接回家
                 'CollectorGoToAndGoHomePlan': {
                     'enabled': True
                 },
+                # 捕碳者根据与家的距离和剩余回合数，判断是否应该立刻冲回家送碳
                 'CollectorRushHomePlan': {
                     'enabled': True
                 }
             },
+            # 捕碳者相关超参
             'collector_config': {
+                # 回家阈值
                 'gohomethreshold': 100,
             },
+            # 地图大小
             'row_count': 15,
             'column_count': 15,
+            # 把执行不了的策略的score设成该值（-inf）
             'mask_preference_index': -1e9
         }
         #存储游戏中的状态，配置
