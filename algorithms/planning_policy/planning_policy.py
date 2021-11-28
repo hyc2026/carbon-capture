@@ -35,28 +35,27 @@ WorkerDirections = np.stack([np.array((0, 0)),
 
 
 def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
-    # 危险区域中如果有树会对position造成影响
+    # 计算position这个位置的碳含量在n步之后的预估数值（考虑上下左右四个位置的树的影响）
     danger_zone = []
     x_left = position.x - 1 if position.x > 0 else 14
     x_right = position.x + 1 if position.x < 14 else 0
     y_up = position.y - 1 if position.y > 0 else 14
     y_down = position.y + 1 if position.y < 14 else 0
-    # danger_zone.append(Point(x_left, y_up))
+    # 上下左右4个格子
     danger_zone.append(Point(position.x, y_up))
-    # danger_zone.append(Point(x_right, y_up))
     danger_zone.append(Point(x_left, position.y))
     danger_zone.append(Point(x_right, position.y))
-    # danger_zone.append(Point(x_left, y_down))
     danger_zone.append(Point(position.x, y_down))
-    # danger_zone.append(Point(x_right, y_down))
     
     start = 0
-    c = board.cells[position].carbon
+    target_cell = board.cells[position]
+    c = target_cell.carbon
     if n == 0:
         return c
-        # position的位置有树，直接从树暴毙之后开始算
-    if board.cells[position].tree is not None:
-        start = 50 - board.cells[position].tree.age + 1
+    
+    # position的位置有树，直接从树暴毙之后开始算
+    if target_cell.tree is not None:
+        start = 50 - target_cell.tree.age + 1
         if start <= n:
             c = 30.0
         else:
@@ -79,6 +78,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
             # c = c * (1 - 0.0375) ** tree_count
         c = min(c, 100)
     return c
+
 
 class BasePolicy:
     """
