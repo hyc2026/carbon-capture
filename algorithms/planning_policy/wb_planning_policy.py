@@ -453,14 +453,14 @@ class SpawnPlanterPlan(RecrtCenterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-        
-        # 如果现在基地有 worker 不能招募
-        base_cell = self.target
-        if base_cell.worker:
-            return False
 
         # 位置不对
         if self.source_agent.cell != self.target:
+            return False
+
+        # 如果现在基地有 worker 不能招募
+        base_cell = self.target
+        if base_cell.worker:
             return False
 
         # 人口已满
@@ -511,17 +511,19 @@ class SpawnCollectorPlan(RecrtCenterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-        # 如果现在基地有 worker 不能招募
-        base_cell = self.target
-        if base_cell.worker:
+        #位置不对
+        if self.source_agent.cell != self.target:
             return False
         
         # 人口已满
         if len(self.our_player.planters) + len(self.our_player.collectors) >= 10:
             return False
-        #位置不对
-        if self.source_agent.cell != self.target:
+        
+        # 如果现在基地有 worker 不能招募
+        base_cell = self.target
+        if base_cell.worker:
             return False
+        
         #钱不够
         if self.our_player.cash < self.env_config['recCollectorCost']:
             return False
