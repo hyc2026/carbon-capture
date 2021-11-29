@@ -152,25 +152,147 @@ def get_actual_plant_cost(configuration, board: Board, our_player: Player):
         return configuration.recPlanterCost + configuration.plantCostInflationRatio * configuration.plantCostInflationBase ** len(board.trees)
 
 
+class CollectorAct(AgentBase):
+    def __init__(self):
+        super().__init__()
+        self.workaction = WorkerAction
+        self.collector_target = None  # 这个target是敌方collector的cell 或 敌方的base cell
+    
+    def _target_plan(self, collector: Collector, ours_info, oppo_info) -> Optional[Cell]:
+        return 1
+    
+    def _check_surround_validity(self, move: WorkerAction, collector: Collector) -> bool:
+        move = move.name
+        our_player_id = collector.player_id
+        if move == 'UP':
+            # 需要看前方三个位置有没有Agent
+            next_step_cell = collector.cell.up
+            check_cell_list = [next_step_cell, next_step_cell.up, next_step_cell.left, next_step_cell.right]
+        elif move == 'DOWN':
+            next_step_cell = collector.cell.down
+            check_cell_list = [next_step_cell, next_step_cell.down, next_step_cell.left, next_step_cell.right]
+        elif move == 'RIGHT':
+            next_step_cell = collector.cell.right
+            check_cell_list = [next_step_cell, next_step_cell.right, next_step_cell.up, next_step_cell.down]
+        elif move == 'LEFT':
+            next_step_cell = collector.cell.left
+            check_cell_list = [next_step_cell, next_step_cell.left, next_step_cell.up, next_step_cell.down]
+        else:
+            raise NotImplementedError
+
+        safe_places = []
+        for cell in check_cell_list:
+            cworker = cell.worker
+            if cworker:
+                this_player_id = cworker.player_id
+                if this_player_id == our_player_id:
+                    safe_places.append(False)
+            else:
+                safe_places.append(True)
+        
+        res = all(safe_places)
+        return res
+    
+    def get_safe_moves(self, collector: Collector):
+        safe_moves = []
+        for move in WorkerAction.moves():
+            safe_moves.append(move)
+            # TODO: 加入 attacker 是无敌的呢？？？
+            # if self._check_surround_validity(move, collector):
+                # safe_moves.append(move)
+        return safe_moves
+    
+    
+    def get_near_enermy_cell(self, collector: Collector):
+        # d <= 2 距离内的情况
+        our_id = collector.player_id
+        pcell = collector.cell
+        check_cells = [
+            (pcell.up, 'UP'), (pcell.down, 'DOWN'), (pcell.left, 'LEFT'), (pcell.right, 'RIGHT'),
+            # pcell.up.left, pcell.up.right, pcell.up.up,
+            # pcell.down.down, pcell.down.left, pcell.down.right,
+            # pcell.left.left, pcell.right.right
+        ]
+        max_carbon = -1
+        best_cell = None
+        best_move_name = None
+        for cell, move_name in check_cells:
+            worker = cell.worker
+            if worker and worker.is_collector:
+                worker_id = worker.player_id
+                if worker_id != our_id:
+                    if worker.carbon > max_carbon:
+                        max_carbon = worker.carbon
+                        best_cell = cell
+                        best_move_name = move_name
+        if best_move_name:
+            return best_cell, best_move_name
+        return None, None
+    
+
+    def get_nearest_agent_cell(self, oppo: Player, attacker: Collector):
+        o_collectors = oppo.collectors
+        if o_collectors:
+            min_dis = 999999
+            best_cell = None
+            for col in o_collectors:
+                dis = get_distance(attacker.position, col.position)
+                if dis < min_dis:
+                    min_dis = dis
+                    best_cell = col.cell
+            return best_cell
+        else:
+            return oppo.recrtCenters[0].cell
+    
+    
+    def move(self, ours_info: Player, oppo_info: List[Player], attacker: Collector, **kwargs):
+        move_action_dict = {}
+        oppo_base = oppo_info[0].recrtCenters[0].cell
+        dis2oppobase = get_distance(attacker.position, oppo_base.position)
+
+        if dis2oppobase > 4:
+            self.collector_target = oppo_base
+        else:
+            # 检查周围 d <= 2 范围内有没有敌人
+            near_enermy_cell, move_name = self.get_near_enermy_cell(attacker)
+            if move_name:
+                self.collector_target = near_enermy_cell
+                move_action_dict[attacker.id] = move_name
+                return move_action_dict
+        
+        # 考虑如何移动
+        # 只要保证不伤害我方人员即可
+        safe_moves = self.get_safe_moves(attacker)
+        if not safe_moves:
+            print('attacker: no safe moves, stay still.')
+            return
+        else:
+            old_position = attacker.position
+            target_position = self.collector_target.position
+            old_distance = get_distance(old_position, target_position)
+            move_name_list = []
+            for move in safe_moves:
+                new_position = old_position.translate(move.to_point(), AREA_SIZE)
+                new_distance = get_distance(new_position, target_position)
+                if new_distance < old_distance:
+                    move_name_list.append(move.name)
+            if len(move_name_list) == 0:
+                move_action_dict[attacker.id] = choice(safe_moves).name
+            else:
+                move_action_dict[attacker.id] = choice(move_name_list)
+        
+        print(f'attacker position: {attacker.position}')
+        print(f'attacker move: {move_action_dict}')
+        return move_action_dict
+
+
 class PlanterAct(AgentBase):
     def __init__(self):
         super().__init__()
         self.workaction = WorkerAction
         self.planter_target = dict()
 
-    @ staticmethod
-    def _minimum_distance(point_1, point_2):
-        abs_distance = abs(point_1 - point_2)
-        cross_distance = min(point_1, point_2) + (15 - max(point_1, point_2))
-        return min(abs_distance, cross_distance)
 
-    def _calculate_distance(self, planter_position, current_position):
-        """计算真实距离，计算跨图距离，取两者最小值"""
-        x_distance = self._minimum_distance(planter_position[0], current_position[0])
-        y_distance = self._minimum_distance(planter_position[1], current_position[1])
-
-        return x_distance + y_distance
-    
     def is_enough_tree(self):
         ours_info = self.board.current_player
         oppo_info = self.board.opponents[0]
@@ -179,7 +301,6 @@ class PlanterAct(AgentBase):
             tree_num_sum += len(ours_info.trees)
         if oppo_info.trees:
             tree_num_sum += len(oppo_info.trees)
-
         
         is_enough = False
         if tree_num_sum > TREE_PLANTED_LIMIT:
@@ -223,6 +344,7 @@ class PlanterAct(AgentBase):
 
         max_score = -1e9
         optimal_cell_sorted = list()
+        one_cell = None
         for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
             target_preference_score = 0
             # 跳过 planter 当前位置
@@ -238,10 +360,14 @@ class PlanterAct(AgentBase):
                 if is_enough_tree:
                     continue
                 
+                if one_cell:
+                    one_cell = _cell
                 # TODO: 注意平衡含碳量
                 target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9)) + _carbon_sum / 20    #log的 max: 20左右， _carbon_sum的max最大400, 3乘表示更看重carbon_sum
 
             else:  # 这个位置有树
+                if one_cell:
+                    one_cell = _cell
                 tree_player_id = _cell.tree.player_id
                 if tree_player_id != ours_info.id:   # 是对方的树
                     target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9)) + PREEMPT_BONUS  # 加一个大数，表示抢敌方树优先，抢敌方距离最近的树优先
@@ -262,7 +388,11 @@ class PlanterAct(AgentBase):
         # optimal_cell_sorted = optimal_cell_sorted + choices(list(carbon_sort_dict_top_n), k=20)   # 避免最优位置全部被过滤掉，所以加了一些randdom
 
         if len(optimal_cell_sorted) == 0:
-            best_cell = carbon_sort_dict_top_n[0]
+            if one_cell:
+                best_cell = one_cell
+            else:
+                # 实在不行就随便选了，避免报错
+                best_cell = planter.cell
         else:
             best_cell = optimal_cell_sorted[0]
         return best_cell
@@ -300,7 +430,16 @@ class PlanterAct(AgentBase):
             else:
                 safe_places.append(True)
         
-        return all(safe_places)
+        two_step_safety = all(safe_places)
+        one_step_safety = True
+        cworker = next_step_cell.worker
+        if cworker and cworker.is_collector:
+            one_step_safety = False
+        # 两部分条件都满足才算安全
+
+        res = one_step_safety and two_step_safety
+        
+        return res
 
 
     def protect_or_rob_tree(self, planter: Planter, ours_info: Player, oppo_info: List[Player]):
@@ -323,7 +462,6 @@ class PlanterAct(AgentBase):
         return False
     
     def get_safe_moves(self, planter: Planter):
-        board = self.board
         safe_moves = []
         for move in WorkerAction.moves():
             if self._check_surround_validity(move, planter):
@@ -1357,8 +1495,8 @@ class PlanningPolicy(BasePolicy):
                 # 以下plan同理
                 'SpawnPlanterPlan': {
                     'enabled': True,
-                    'planter_count_weight':-7,
-                    'collector_count_weight':3,
+                    'planter_count_weight':-8,
+                    'collector_count_weight':2,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
@@ -1366,8 +1504,8 @@ class PlanningPolicy(BasePolicy):
                 # 基地 招募捕碳员计划
                 'SpawnCollectorPlan': {
                     'enabled': True,
-                    'planter_count_weight':7,
-                    'collector_count_weight':-3,
+                    'planter_count_weight':8,
+                    'collector_count_weight':-2,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
@@ -1427,7 +1565,10 @@ class PlanningPolicy(BasePolicy):
             'opponent_player':
             None  #carbon.helpers.Player class from board field
         }
-        self.planter = PlanterAct()
+        self.planter_act = PlanterAct()
+        self.collector_act = CollectorAct()
+        self.board = None
+        self.attacker = None
 
     #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
     #mod self.config['column_count]
@@ -1465,11 +1606,16 @@ class PlanningPolicy(BasePolicy):
     #计算出所有合法的Plan
     def make_possible_plans(self):
         plans = []
-        board = self.game_state['board']
+        board = self.board
         for cell_id, cell in board.cells.items():
             # iterate over all collectors planters and recrtCenter of currnet
             # player
             for collector in self.game_state['our_player'].collectors:
+                
+                # 这里排除那些专门就行捣蛋的捕碳员
+                if self.attacker and self.attacker.id == collector.id:
+                    continue
+                
                 plan = (CollectorGoToAndCollectCarbonPlan(
                     collector, cell, self))
                 plans.append(plan)
@@ -1577,22 +1723,68 @@ class PlanningPolicy(BasePolicy):
                 agent_id_2_action_number[agent_id] = 0
         return agent_id_2_action_number
     
+    
+    def set_attacker(self, our: Player):
+        # 如果之前指定了 attacker
+        collectors = our.collectors
+        if not collectors:
+            self.attacker = None
+            return None
+        
+        if self.attacker:
+            # 判断其是否还活着
+            attacker_id = self.attacker.id
+            if attacker_id in our.worker_ids:
+                for col in collectors:
+                    if attacker_id == col.id:
+                        self.attacker = col  # 更新 obj
+                
+                if self.attacker.carbon == 0:
+                    return self.attacker
+            else:
+                for col in collectors:
+                    if col.carbon == 0:
+                        self.attacker = col
+                        return col
+                self.attacker = None
+        
+        for col in collectors:
+            if col.carbon == 0:
+                self.attacker = col
+                return col
+        self.attacker = None
+        return None
+
     #被上层调用的函数
     #所有规则为这个函数所调用
     def take_action(self, observation, configuration):
         self.global_position_mask = dict()
                             
         self.parse_observation(observation, configuration)
+        cur_board = self.game_state['board']
+        self.board = cur_board
+        ours, oppo = cur_board.current_player, cur_board.opponents
+
+        # 挑出1个捕碳员作为捣蛋鬼，为其设置标记，每次先判断其是否存活
+        # 如果活着，那很好；如果没了，那看看当前有没有0碳员，有的话派出一个，指定它，没有就等待
+        
+        attacker = self.set_attacker(ours)
+
+        if ours.cash < 60 and len(ours.workers) < 4:
+            self.attacker = None
+            attacker = None
         
         possible_plans = self.make_possible_plans()
         plans = self.possible_plans_to_plans(possible_plans)
 
+        # print('plans')
+        # print(plans)
+
         ## 种树员的策略从这里开始吧，独立出来
         # 种树员做决策去哪里种树
-        cur_board = self.game_state['board']
-        ours, oppo = cur_board.current_player, cur_board.opponents
         
-        planter_dict = self.planter.move(
+        
+        planter_dict = self.planter_act.move(
             ours_info=ours,
             oppo_info=oppo,
             map_carbon_location=cur_board.cells,
@@ -1600,6 +1792,18 @@ class PlanningPolicy(BasePolicy):
             cur_board=cur_board,
             configuration=configuration
         )
+
+        attacker_dict = None
+        if self.attacker:
+            attacker_dict = self.collector_act.move(
+                ours_info=ours,
+                oppo_info=oppo,
+                attacker=self.attacker,
+                map_carbon_location=cur_board.cells,
+                step=cur_board.step,
+                cur_board=cur_board,
+                configuration=configuration
+            )
         
         agent_id_2_action_number = self.plan2dict(plans)
         
@@ -1611,6 +1815,9 @@ class PlanningPolicy(BasePolicy):
         command_list = self.to_env_commands(agent_id_2_action_number)
         if planter_dict:
             command_list.update(planter_dict)
+        # attacker_dict
+        if attacker_dict:
+            command_list.update(attacker_dict)
         
         print(f'\n\n---------step: [ {cur_board.step + 2} ]')
         print(command_list)
