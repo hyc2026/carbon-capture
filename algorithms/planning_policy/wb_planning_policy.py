@@ -7,14 +7,15 @@ sys.path.append('..')
 sys.path.append('../..')
 import copy
 from abc import ABC, abstractmethod
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Optional
 
-from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
-                                             Point, RecrtCenter, Worker,
-                                             RecrtCenterAction, WorkerAction)
+from zerosum_env.envs.carbon.helpers import \
+    (Board, Player, Cell, Collector, Planter, Point, \
+        RecrtCenter, Worker, RecrtCenterAction, WorkerAction)
 from random import randint, shuffle, choice
 
 TOP_CARBON_CONTAIN = 5
+AREA_SIZE = 15
 
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
@@ -38,6 +39,16 @@ Action2Direction = {None: np.array((0, 0)),
                     WorkerAction.DOWN: np.array((0, -1)),
                     WorkerAction.LEFT: np.array((-1, 0))
                     }
+
+
+def get_distance(p1: Point, p2: Point) -> int:
+    x1, y1 = p1[0], p1[1]
+    x2, y2 = p2[0], p2[1]
+    x_1_to_2= (x1 - x2 + AREA_SIZE) % AREA_SIZE 
+    y_1_to_2= ( y1 - y2 + AREA_SIZE) % AREA_SIZE
+    dis_x = min(AREA_SIZE - x_1_to_2 , x_1_to_2)
+    dis_y = min(AREA_SIZE - y_1_to_2 , y_1_to_2)
+    return dis_x + dis_y
 
 
 class AgentBase:
@@ -76,6 +87,26 @@ def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
     map_carbon_sum_sorted = dict(sorted(carbon_contain_dict.items(), key=lambda x: x[1], reverse=True))
 
     return map_carbon_sum_sorted
+
+# 判断附近有没有敌方的种树员,  敌方距离 <= d_threshold，判断为有敌人
+def has_enermy_planters(tree_pos: Point, oppo_planters: List[Planter], d_threshold=2):
+    for p in oppo_planters:
+        d = get_distance(tree_pos, p.position)
+        if d <= d_threshold:
+            return True
+    return False
+
+
+def get_all_enermy_workers(enermies: List[Player], worker_type: Optional[Worker]) -> List[Worker]:
+    workers = []
+    for player in enermies:
+        for worker in player.workers:
+            if worker_type:
+                if isinstance(worker, worker_type):
+                    workers.append(worker)
+            else:
+                workers.append(worker)
+    return workers
 
 
 class PlanterAct(AgentBase):
@@ -136,19 +167,44 @@ class PlanterAct(AgentBase):
         move = move.name
         if move == 'UP':
             # 需要看前方三个位置有没有Agent
-            check_cell_list = [planter.cell.up, planter.cell.up.left, planter.cell.up.right]
+            next_step_cell = planter.cell.up
+            check_cell_list = [next_step_cell, next_step_cell.up, next_step_cell.left, next_step_cell.right]
         elif move == 'DOWN':
-            check_cell_list = [planter.cell.down, planter.cell.down.left, planter.cell.down.right]
+            next_step_cell = planter.cell.down
+            check_cell_list = [next_step_cell, next_step_cell.down, next_step_cell.left, next_step_cell.right]
         elif move == 'RIGHT':
-            check_cell_list = [planter.cell.right, planter.cell.right.up, planter.cell.right.down]
+            next_step_cell = planter.cell.right
+            check_cell_list = [next_step_cell, next_step_cell.right, next_step_cell.up, next_step_cell.down]
         elif move == 'LEFT':
-            check_cell_list = [planter.cell.left, planter.cell.left.up, planter.cell.left.down]
+            next_step_cell = planter.cell.left
+            check_cell_list = [next_step_cell, next_step_cell.left, next_step_cell.up, next_step_cell.down]
         else:
             raise NotImplementedError
 
-        return all([True if (_c.collector is None) and (_c.planter is None) else False for _c in check_cell_list])
+        return all([False if _c.worker else True for _c in check_cell_list])
 
-    def move(self, ours_info, oppo_info, **kwargs):
+
+    def protect_or_rob_tree(self, planter: Planter, ours_info: Player, oppo_info: List[Player]):
+        # 如果当前种树员站在自己的树下面，同时树的附近(d<=2)有敌方种树员,那么不动，保护树
+        this_tree = planter.cell.tree
+        if this_tree:
+            if this_tree.player_id == ours_info.id:  # 我们自己的树
+                # 判断附近 d <= 2 的格子内是否有敌方种树员
+                # has_enermy_planters(tree_pos, oppo_planters)
+                enermy_planters = get_all_enermy_workers(oppo_info, Planter)
+                has_enmery = has_enermy_planters(this_tree.position, enermy_planters)
+                if has_enmery:
+                    # do not move
+                    print('has enermy nearby, do not move.')
+                    return True
+            else:  # 敌人的树，抢呗
+                # TODO: 先默认抢树，之后再判断一下树的年龄，如果太老就不要了
+                # None 啥都不做就是抢树
+                return True
+        return False
+
+
+    def move(self, ours_info: Player, oppo_info: List[Player], **kwargs):
         # 
         """
         TODO: 需要改进的地方：
@@ -167,6 +223,11 @@ class PlanterAct(AgentBase):
         carbon_sort_dict = calculate_carbon_contain(map_carbon_cell)  # 每一次move都先计算一次附近碳多少的分布
 
         for planter in ours_info.planters:
+            is_protect_or_rob_tree = self.protect_or_rob_tree(planter, ours_info, oppo_info)
+            if is_protect_or_rob_tree:
+                # 如果当前种树员站在自己的树下面，同时树的附近(d<=2)有敌方种树员,那么不动，保护树
+                continue
+
             # 先给他随机初始化一个行动
             if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
 
@@ -181,28 +242,35 @@ class PlanterAct(AgentBase):
                     # 不然待着不动，容易被人干掉
                 else:  # 没有执行完接着执行
 
+                    safe_moves = []
+                    for move in WorkerAction.moves():
+                        if self._check_surround_validity(move, planter):
+                            safe_moves.append(move)
+
+                    if not safe_moves:
+                        print('no soft moves, stay still.')
+                        continue
+
                     old_position = planter.position
                     target_position = self.planter_target[planter.id].position
                     old_distance = self._calculate_distance(old_position, target_position)
 
-                    for move in WorkerAction.moves():
+                    has_short_path = False
+                    for move in safe_moves:
                         new_position = old_position + move.to_point()   # TODO: 考虑地图跨界情况
                         new_position = str(new_position).replace("15", "0")
                         new_position = Point(*eval(new_position.replace("-1", "14")))
                         new_distance = self._calculate_distance(new_position, target_position)
 
                         if new_distance < old_distance:
-                            if self._check_surround_validity(move, planter):
-                                move_action_dict[planter.id] = move.name
-                            else:   # 随机移动，不要静止不动或反向移动，否则当我方多个智能体相遇会卡主
-                                if move.name == 'UP':
-                                    move_action_dict[planter.id] = choice(["DOWN", "RIGHT", "LEFT"])
-                                elif move.name == 'DOWN':
-                                    move_action_dict[planter.id] = choice(["UP", "RIGHT", "LEFT"])
-                                elif move.name == 'RIGHT':
-                                    move_action_dict[planter.id] = choice(["UP", "DOWN", "LEFT"])
-                                elif move.name == 'LEFT':
-                                    move_action_dict[planter.id] = choice(["UP", "DOWN", "RIGHT"])
+                            move_action_dict[planter.id] = move.name
+                            has_short_path = True
+                            break
+                    
+                    # 没有近路，远路也要走，保命要紧
+                    if not has_short_path:
+                        random_from_safe_move = choice(safe_moves)
+                        move_action_dict[planter.id] = random_from_safe_move.name
 
         return move_action_dict
 
@@ -358,11 +426,23 @@ class SpawnPlanterPlan(RecrtCenterPlan):
     def calculate_score(self):
         #is valid
         if self.check_validity() == False:
-            self.preference_index = self.config[
-                'mask_preference_index']
+            self.preference_index = self.config['mask_preference_index']
         else:
-            self.preference_index =  (self.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight'] * self.planters_count \
-                + self.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight'] * self.collectors_count + 1) / 1000
+
+            # 'SpawnPlanterPlan': {
+            # 'enabled': True,
+            # 'planter_count_weight':-8,
+            # 'collector_count_weight':2,
+            # 'cash_weight':2,
+            # 'constant_weight':,
+            # 'denominator_weight':
+            # },
+
+            planter_count_weight = self.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight']
+            collector_count_weight = self.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight']
+            self.preference_index = \
+                ( planter_count_weight * self.planters_count \
+                + collector_count_weight * self.collectors_count + 1) / 1000
 
     def check_validity(self):
         # 没有开启
@@ -373,13 +453,18 @@ class SpawnPlanterPlan(RecrtCenterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
+        
+        # 如果现在基地有 worker 不能招募
+        base_cell = self.target
+        if base_cell.worker:
+            return False
 
         # 位置不对
         if self.source_agent.cell != self.target:
             return False
 
         # 人口已满
-        if len(self.our_player.planters) + len(self.our_player.collectors) >= 10:
+        if self.planters_count + self.collectors_count >= 10:
             return False
 
         #钱不够
@@ -409,11 +494,12 @@ class SpawnCollectorPlan(RecrtCenterPlan):
             self.preference_index = self.config[
                 'mask_preference_index']
         else:
-            self_planters_count=len(self.our_player.planters) 
-            self_collectors_count = len(self.our_player.collectors) 
-            self.preference_index =  (self.config['enabled_plans']['SpawnCollectorPlan']['planter_count_weight'] * self_planters_count \
-                + self.config['enabled_plans']['SpawnCollectorPlan']['collector_count_weight'] * self_collectors_count \
-                    + 1) / 1000 + 0.0001
+            planter_count_weight = self.config['enabled_plans']['SpawnCollectorPlan']['planter_count_weight']
+            collector_count_weight = self.config['enabled_plans']['SpawnCollectorPlan']['collector_count_weight']
+
+            self.preference_index =  \
+                (planter_count_weight * self.planters_count \
+                + collector_count_weight * self.collectors_count + 1) / 1000 + 0.0001
 
     def check_validity(self):
         #没有开启
@@ -425,7 +511,12 @@ class SpawnCollectorPlan(RecrtCenterPlan):
             return False
         if not isinstance(self.target, Cell):
             return False
-        #人口已满
+        # 如果现在基地有 worker 不能招募
+        base_cell = self.target
+        if base_cell.worker:
+            return False
+        
+        # 人口已满
         if len(self.our_player.planters) + len(self.our_player.collectors) >= 10:
             return False
         #位置不对
@@ -1252,7 +1343,7 @@ class PlanningPolicy(BasePolicy):
         if planter_dict:
             command_list.update(planter_dict)
         
-        print(f'\n\n---------step: [ {cur_board.step} ]')
+        print(f'\n\n---------step: [ {cur_board.step + 2} ]')
         print(command_list)
         # 这个地方返回一个cmd字典
         # 类似这样
