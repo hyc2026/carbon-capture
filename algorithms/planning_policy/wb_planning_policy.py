@@ -1,4 +1,3 @@
-from os import cpu_count
 import sys
 import numpy as np
 
@@ -12,10 +11,16 @@ from typing import Dict, Tuple, List, Optional
 from zerosum_env.envs.carbon.helpers import \
     (Board, Player, Cell, Collector, Planter, Point, \
         RecrtCenter, Worker, RecrtCenterAction, WorkerAction)
-from random import randint, shuffle, choice
+from random import randint, shuffle, choice, choices
 
-TOP_CARBON_CONTAIN = 5
 AREA_SIZE = 15
+
+TOP_CARBON_CONTAIN = 100  # 选择 top n 的碳含量单元格
+PREEMPT_BONUS = 50000  # 抢树偏好
+PROTECT_BONUS = 25000  # 保护偏好
+TREE_PLANTED_LIMIT = 15  # 在场树的数量大于该值，则停止种树， TODO: 最好小于10 ?
+
+assert PREEMPT_BONUS > PROTECT_BONUS  # 抢优先级大于保护
 
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
@@ -127,41 +132,60 @@ class PlanterAct(AgentBase):
         y_distance = self._minimum_distance(planter_position[1], current_position[1])
 
         return x_distance + y_distance
+    
 
-    def _target_plan(self, planter: Planter, carbon_sort_dict: Dict):
-        # 什么时候种树，敌方树多少，我方树多少，地图上的碳
-        # 我方树在N棵以内的时候，我方种树
-        # 敌方有树，优先抢敌方的树
-        # 我方树大于N棵，敌方没有树，我方种树员停留在树龄最小的树上保护树
-
+    def _target_plan(self, planter: Planter, carbon_sort_dict: Dict, ours_info, oppo_info) -> Optional[Cell]:
+        """Planter 我们的种树员，carbon_sort_dict Cell碳含量从多到少排序"""
+        # TODO: oppo_info 这个地方可能是多个对手，决赛时要注意
         planter_position = planter.position
         # 取碳排量最高的前n
 
-        # if True:  # 我方树在N棵以内的时候，我方优先种树
-        #     pass
-        # elif False:   # 我方树大于N棵的时候，优先抢敌方的树
-        #     pass
-        # elif False:   # 我方树大于M棵的时候，停止种树，开始守护树
-        #     pass
-
         carbon_sort_dict_top_n = \
-            {_v: _k for _i, (_v, _k) in enumerate(carbon_sort_dict.items()) if _i < TOP_CARBON_CONTAIN}  # 只选取含碳量top_n的cell来进行计算，拿全部的cell可能会比较耗时？
+            {_v: _k for _i, (_v, _k) in enumerate(carbon_sort_dict.items()) if _i < TOP_CARBON_CONTAIN}  # 只选取含碳量top_n的cell来进行计算。
+
+        """在这个范围之内，有树先抢树，没树了再种树，种树也要有个上限，种的树到达一定数量之后，开始保护树"""
+
         # 计算planter和他的相对距离，并且结合该位置四周碳的含量，得到一个总的得分
-        planned_target = [Point(*_v.position) for _k, _v in self.planter_target.items()]
-        max_score, max_score_cell = -1e9, None
+        planned_target = [Point(*_v.position) for _k, _v in self.planter_target.items()]   # 计划的位置
+
+        tree_num_sum = len(ours_info.trees) + len(oppo_info.trees)  # 在场所有树的数量
+        max_score = target_preference_score = -1e9
+        optimal_cell_sorted = list()
         for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
-            if (_cell.tree is None) and (_cell.position not in planned_target) and (_cell.recrtCenter is None):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中, 且这个位置不能是基地
-                planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
-                target_preference_score = 0 * _carbon_sum + np.log(1 / (planter_to_cell_distance + 1e-9))  # 不考虑碳总量只考虑距离 TODO: 这会导致中了很多树，导致后期花费很高
 
-                if target_preference_score > max_score:
-                    max_score = target_preference_score
-                    max_score_cell = _cell
+            # 跳过 planter 当前位置
+            if _cell.position == planter_position:
+                continue
 
-        if max_score_cell is None:  # 没有找到符合条件的最大得分的cell，随机选一个cell
-            max_score_cell = choice(list(carbon_sort_dict_top_n))
+            planter_to_cell_distance = get_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
 
-        return max_score_cell
+            if _cell.tree is None:  # 此位置没有树
+                if (_cell.position not in planned_target) and (_cell.recrtCenter is None) and (tree_num_sum <= TREE_PLANTED_LIMIT):
+
+                    # TODO: 注意平衡含碳量
+                    target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9)) + _carbon_sum / 20    #log的 max: 20左右， _carbon_sum的max最大400, 3乘表示更看重carbon_sum
+
+            else:  # 这个位置有树
+
+                tree_player_id = int(_cell.tree.id.split("-")[1])
+
+                if tree_player_id == oppo_info.id:   # 是对方的树
+
+                    target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9)) + PREEMPT_BONUS  # 加一个大数，表示抢敌方树优先，抢敌方距离最近的树优先
+
+                if (tree_player_id == ours_info.id) and (tree_num_sum > TREE_PLANTED_LIMIT):  # 是我方的树，并且我方树的总数量>M，那就开始保护我方的树
+
+                    target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9)) + PROTECT_BONUS
+
+            if target_preference_score > max_score:
+                max_score = target_preference_score
+                optimal_cell_sorted.append(_cell)  # list越往后分数越大
+
+        optimal_cell_sorted.reverse()
+        optimal_cell_sorted = optimal_cell_sorted + choices(list(carbon_sort_dict_top_n), k=20)   # 避免最优位置全部被过滤掉，所以加了一些randdom
+        best_cell = optimal_cell_sorted[0]
+        return best_cell
+
 
     def _check_surround_validity(self, move: WorkerAction, planter: Planter) -> bool:
         move = move.name
@@ -219,7 +243,8 @@ class PlanterAct(AgentBase):
         if ours_info.planters == []:
             return None
 
-        map_carbon_cell = kwargs["map_carbon_location"]
+        map_carbon_cell = kwargs['map_carbon_location']
+        cur_board = kwargs['cur_board']
         carbon_sort_dict = calculate_carbon_contain(map_carbon_cell)  # 每一次move都先计算一次附近碳多少的分布
 
         for planter in ours_info.planters:
@@ -231,56 +256,62 @@ class PlanterAct(AgentBase):
             # 先给他随机初始化一个行动
             if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
 
-                target_cell = self._target_plan(planter, carbon_sort_dict)  # 返回这个智能体要去哪里的一个字典
+                target_cell = self._target_plan(planter=planter, carbon_sort_dict=carbon_sort_dict, ours_info=ours_info, oppo_info=oppo_info[0])  # 返回这个智能体要去哪里的一个字典
 
                 self.planter_target[planter.id] = target_cell  # 给它新的行动
 
-            else:  # 说明他有策略，看策略是否执行完毕，执行完了移出字典，没有执行完接着执行
-                if planter.position == self.planter_target[planter.id].position:
-                    self.planter_target.pop(planter.id)
-                    # TODO: 这个地方还需要加入一个判断：当前是否有现金种树，如果没有种树员得离开这个地方，
-                    # 不然待着不动，容易被人干掉
-                else:  # 没有执行完接着执行
+            # 当 planter 有策略了，那么看下一步的执行情况
+            # 说明他有策略，看策略是否执行完毕，执行完了移出字典，没有执行完接着执行
+            if planter.position == self.planter_target[planter.id].position:
+                self.planter_target.pop(planter.id)
+            else:  # 没有执行完接着执行
 
-                    safe_moves = []
-                    for move in WorkerAction.moves():
-                        if self._check_surround_validity(move, planter):
-                            safe_moves.append(move)
+                # 重新估计一下目标的价值
+                # 1. 目标是否已经被敌方占领
+                # 2. 目标成本是否已经 > 收益
 
-                    if not safe_moves:
-                        print('no soft moves, stay still.')
-                        continue
+                # refind_target = 
 
-                    old_position = planter.position
-                    target_position = self.planter_target[planter.id].position
-                    old_distance = self._calculate_distance(old_position, target_position)
+                safe_moves = []
+                for move in WorkerAction.moves():
+                    if self._check_surround_validity(move, planter):
+                        safe_moves.append(move)
 
-                    has_short_path = False
-                    for move in safe_moves:
-                        new_position = old_position + move.to_point()   # TODO: 考虑地图跨界情况
-                        new_position = str(new_position).replace("15", "0")
-                        new_position = Point(*eval(new_position.replace("-1", "14")))
-                        new_distance = self._calculate_distance(new_position, target_position)
+                if not safe_moves:
+                    print('no soft moves, stay still.')
+                    continue
 
-                        if new_distance < old_distance:
-                            move_action_dict[planter.id] = move.name
-                            has_short_path = True
-                            break
-                    
-                    # 没有近路，远路也要走，保命要紧
-                    if not has_short_path:
-                        random_from_safe_move = choice(safe_moves)
-                        move_action_dict[planter.id] = random_from_safe_move.name
+                old_position = planter.position
+                target_position = self.planter_target[planter.id].position
+                old_distance = self._calculate_distance(old_position, target_position)
+
+                has_short_path = False
+                for move in safe_moves:
+                    new_position = old_position + move.to_point()   # TODO: 考虑地图跨界情况
+                    new_position = str(new_position).replace("15", "0")
+                    new_position = Point(*eval(new_position.replace("-1", "14")))
+                    new_distance = self._calculate_distance(new_position, target_position)
+
+                    if new_distance < old_distance:
+                        move_action_dict[planter.id] = move.name
+                        has_short_path = True
+                        break
+                
+                # 没有近路，远路也要走，保命要紧
+                if not has_short_path:
+                    random_from_safe_move = choice(safe_moves)
+                    move_action_dict[planter.id] = random_from_safe_move.name
 
         return move_action_dict
 
 def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
     # 计算position这个位置的碳含量在n步之后的预估数值（考虑上下左右四个位置的树的影响）
     danger_zone = []
-    x_left = position.x - 1 if position.x > 0 else 14
-    x_right = position.x + 1 if position.x < 14 else 0
-    y_up = position.y - 1 if position.y > 0 else 14
-    y_down = position.y + 1 if position.y < 14 else 0
+    border = AREA_SIZE - 1
+    x_left = position.x - 1 if position.x > 0 else border
+    x_right = position.x + 1 if position.x < border else 0
+    y_up = position.y - 1 if position.y > 0 else border
+    y_down = position.y + 1 if position.y < border else 0
     # 上下左右4个格子
     danger_zone.append(Point(position.x, y_up))
     danger_zone.append(Point(x_left, position.y))
@@ -1332,6 +1363,7 @@ class PlanningPolicy(BasePolicy):
             oppo_info=oppo,
             map_carbon_location=cur_board.cells,
             step=cur_board.step,
+            cur_board=cur_board
         )
         
         agent_id_2_action_number = self.plan2dict(plans)
