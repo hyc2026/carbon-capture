@@ -353,7 +353,8 @@ class PlanterAct(AgentBase):
             tree_pos = tree.cell.position
             if tree_pos in planter_target_positions_2_pid:
                 this_pid = planter_target_positions_2_pid[tree_pos]
-                del id2planter_dict[this_pid]  # 剔除这个有任务的 planter
+                if this_pid in id2planter_dict:
+                    del id2planter_dict[this_pid]  # 剔除这个有任务的 planter
                 continue
             
             if len(id2planter_dict) == 0:  # 没有足够的 planter 了
@@ -380,7 +381,6 @@ class PlanterAct(AgentBase):
                     del id2planter_dict[best_plid]  # 从候选列表里剔除
                 else:
                     break
-        return self.planter_target
 
 
     def get_near_tree_cell(self, planter: Planter):
@@ -430,7 +430,7 @@ class PlanterAct(AgentBase):
         configuration = kwargs['configuration']
 
         # 检查一下家门口有没有敌方的树，有的话，离得最近的种树员去拔掉
-        self.planter_target = self.check_home_nearby_tree()
+        self.check_home_nearby_tree()
 
         carbon_sort_dict = calculate_carbon_contain(map_carbon_cell, ours_info, self.planter_target, cur_board)  # 每一次move都先计算一次附近碳多少的分布
 
@@ -1621,3 +1621,5 @@ class PlanningPolicy(BasePolicy):
         """
 
         return command_list
+
+
