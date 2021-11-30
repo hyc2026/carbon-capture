@@ -69,6 +69,7 @@ class AgentBase:
 def get_sorrounding_carbons(cell: Cell):
     """ return the carbon of up, down, left, and right of given cell
     """
+    
     sum_carbon = 0
     sum_carbon += cell.up.carbon
     sum_carbon += cell.down.carbon
