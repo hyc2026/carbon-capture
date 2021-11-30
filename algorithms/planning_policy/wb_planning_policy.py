@@ -41,6 +41,7 @@ Action2Direction = {None: np.array((0, 0)),
                     WorkerAction.LEFT: np.array((-1, 0))
                     }
 
+danger_zone: Dict[Point, int] = {}  # 保存危险区域，或者已被占领区域，每个回合更新一下
 
 def get_distance(p1: Point, p2: Point) -> int:
     x1, y1 = p1[0], p1[1]
@@ -142,6 +143,11 @@ def get_all_enermy_workers(enermies: List[Player], worker_type: Optional[Worker]
             else:
                 workers.append(worker)
     return workers
+
+
+def get_moved_position(src_pos: Point, move: WorkerAction):
+    """从 src_pos 移动后的坐标"""
+    return src_pos.translate(move.to_point(), AREA_SIZE)
 
 
 def get_actual_plant_cost(configuration, board: Board, our_player: Player):
@@ -249,20 +255,16 @@ class CollectorAct(AgentBase):
         else:
             return oppo.recrtCenters[0].cell
 
+    # 如果直接派捕碳员蹲在敌方基地会怎么样
     def move(self, ours_info: Player, oppo_info: List[Player], attacker: Collector, **kwargs):
         move_action_dict = {}
         oppo_base = oppo_info[0].recrtCenters[0].cell
+        self.collector_target = oppo_base
+        # 距离敌方基地的距离
         dis2oppobase = get_distance(attacker.position, oppo_base.position)
 
-        if dis2oppobase > 4:
-            self.collector_target = oppo_base
-        else:
-            # 检查周围 d <= 2 范围内有没有敌人
-            near_enermy_cell, move_name = self.get_near_enermy_cell(attacker)
-            if move_name:
-                self.collector_target = near_enermy_cell
-                move_action_dict[attacker.id] = move_name
-                return move_action_dict
+        if attacker.position == oppo_base.position:
+            return move_action_dict
 
         # 考虑如何移动
         # 只要保证不伤害我方人员即可
@@ -290,6 +292,49 @@ class CollectorAct(AgentBase):
         print(f'attacker move: {move_action_dict}')
         return move_action_dict
 
+    
+    # def move(self, ours_info: Player, oppo_info: List[Player], attacker: Collector, **kwargs):
+    #     move_action_dict = {}
+    #     oppo_base = oppo_info[0].recrtCenters[0].cell
+    #     # 距离敌方基地的距离
+    #     dis2oppobase = get_distance(attacker.position, oppo_base.position)
+
+    #     if dis2oppobase > 4:
+    #         self.collector_target = oppo_base
+    #     else:
+    #         # 检查周围 d <= 2 范围内有没有敌人
+    #         near_enermy_cell, move_name = self.get_near_enermy_cell(attacker)
+    #         if move_name:
+    #             self.collector_target = near_enermy_cell
+    #             move_action_dict[attacker.id] = move_name
+    #             return move_action_dict
+
+    #     # 考虑如何移动
+    #     # 只要保证不伤害我方人员即可
+    #     safe_moves = self.get_safe_moves(attacker)
+    #     if not safe_moves:
+    #         print('attacker: no safe moves, stay still.')
+    #         return
+    #     else:
+    #         old_position = attacker.position
+    #         target_position = self.collector_target.position
+    #         old_distance = get_distance(old_position, target_position)
+    #         move_name_list = []
+    #         for move in safe_moves:
+    #             new_position = old_position.translate(
+    #                 move.to_point(), AREA_SIZE)
+    #             new_distance = get_distance(new_position, target_position)
+    #             if new_distance < old_distance:
+    #                 move_name_list.append(move.name)
+    #         if len(move_name_list) == 0:
+    #             move_action_dict[attacker.id] = choice(safe_moves).name
+    #         else:
+    #             move_action_dict[attacker.id] = choice(move_name_list)
+
+    #     print(f'attacker position: {attacker.position}')
+    #     print(f'attacker move: {move_action_dict}')
+    #     return move_action_dict
+
 
 class PlanterAct(AgentBase):
     def __init__(self):
@@ -311,6 +356,7 @@ class PlanterAct(AgentBase):
             is_enough = True
         return is_enough
 
+    # TODO: 这个函数有问题，需要优化
     def _target_plan(self, planter: Planter, carbon_sort_dict: Dict, ours_info, oppo_info) -> Optional[Cell]:
         """Planter 我们的种树员，carbon_sort_dict Cell碳含量从多到少排序"""
         # TODO: oppo_info 这个地方可能是多个对手，决赛时要注意
@@ -406,25 +452,6 @@ class PlanterAct(AgentBase):
             best_cell = optimal_cell_sorted[0]
         return best_cell
 
-    def _check_surround_validity(self, move: WorkerAction, planter: Planter) -> bool:
-        move = move.name
-        board = self.board
-        if move == 'UP':
-            # 需要看前方三个位置有没有Agent
-            next_step_cell = planter.cell.up
-        elif move == 'DOWN':
-            next_step_cell = planter.cell.down
-        elif move == 'RIGHT':
-            next_step_cell = planter.cell.right
-        elif move == 'LEFT':
-            next_step_cell = planter.cell.left
-        else:
-            raise NotImplementedError
-
-        if self.danger_zone.get(next_step_cell.position, 0) > 0:
-            return False
-        return True
-
 
     def protect_or_rob_tree(self, planter: Planter, ours_info: Player, oppo_info: List[Player]):
         # 如果当前种树员站在自己的树下面，同时树的附近(d<=2)有敌方种树员,那么不动，保护树
@@ -434,24 +461,28 @@ class PlanterAct(AgentBase):
                 # 判断附近 d <= 2 的格子内是否有敌方种树员
                 # has_enermy_planters(tree_pos, oppo_planters)
                 enermy_planters = get_all_enermy_workers(oppo_info, Planter)
-                has_enmery = has_enermy_planters(
-                    this_tree.position, enermy_planters)
+                has_enmery = has_enermy_planters(this_tree.position, enermy_planters)
                 if has_enmery:
                     # do not move
+                    print(f'planter position: {planter.position}')
                     print('has enermy nearby, do not move.')
                     return True
+                else:
+                    return False
             else:  # 敌人的树，抢呗
-                # TODO: 先默认抢树，之后再判断一下树的年龄，如果太老就不要了
+                # 树的年龄，如果太老就不要了
                 # None 啥都不做就是抢树
                 if this_tree.age > 40:
                     return False
+                print(f'rob tree, position: {planter.position}')
                 return True
         return False
 
     def get_safe_moves(self, planter: Planter):
         safe_moves = []
         for move in WorkerAction.moves():
-            if self._check_surround_validity(move, planter):
+            new_pos = get_moved_position(planter.position, move)
+            if new_pos not in danger_zone:  # 只要不在危险区域就ok
                 safe_moves.append(move)
         return safe_moves
 
@@ -541,33 +572,37 @@ class PlanterAct(AgentBase):
                 new_planter_target[wid] = cell
         self.planter_target = new_planter_target
 
-        move_action_dict = dict()
+        move_action_dict: Dict[str, str] = {}  # 这个最后遍历一遍 planters 就行了
 
-        """需要知道本方当前位置信息，敵方当前位置信息，地图上的碳的分布"""
+        """需要知道本方当前位置信息，敌方当前位置信息，地图上的碳的分布"""
         # 如果planter信息是空的，则无需执行任何操作
         if ours_info.planters == []:
             return None
 
         map_carbon_cell = kwargs['map_carbon_location']
-        cur_board = kwargs['cur_board']
+        cur_board: Board = kwargs['cur_board']
         self.board = cur_board
         configuration = kwargs['configuration']
-        self.danger_zone = kwargs['danger_zone']
 
         # 检查一下家门口有没有敌方的树，有的话，离得最近的种树员去拔掉
         self.check_home_nearby_tree()
 
         carbon_sort_dict = calculate_carbon_contain(
-            map_carbon_cell, ours_info, self.planter_target, cur_board)  # 每一次move都先计算一次附近碳多少的分布
-
+            map_carbon_cell, ours_info, self.planter_target, self.board)  # 每一次move都先计算一次附近碳多少的分布
+        
+        next_flag_position = None
         for planter in ours_info.planters:
-            is_protect_or_rob_tree = self.protect_or_rob_tree(
-                planter, ours_info, oppo_info)
-            if is_protect_or_rob_tree:
+            if next_flag_position:  # 这里标记的上一个 planter 的位置
+                danger_zone[next_flag_position] = 1
+            next_flag_position = planter.position  # 这里记录该 planter 下一个位置，默认是本身, 如果后面有移动，那么更新这个变量
+            is_protect_or_rob_tree = self.protect_or_rob_tree(planter, ours_info, oppo_info)
+            if is_protect_or_rob_tree: # 如果是目标待定状态，且当前位置有树
                 # 如果当前种树员站在自己的树下面，同时树的附近(d<=2)有敌方种树员,那么不动，保护树
+                # 或者是敌人的树，抢树
                 continue
 
-            # 先给他随机初始化一个行动
+            
+            
             if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
 
                 target_cell = self._target_plan(
@@ -583,37 +618,35 @@ class PlanterAct(AgentBase):
 
                 # 这个地方是想种树
                 # 判断一下有没有钱
-                actual_cost = get_actual_plant_cost(
-                    configuration, cur_board, ours_info)
+                actual_cost = get_actual_plant_cost(configuration, self.board, ours_info)
                 is_enough_tree_flag = self.is_enough_tree()
+                
                 if ours_info.cash < actual_cost or is_enough_tree_flag:
                     if is_enough_tree_flag:
                         print('enough tree, no more need.')
                     else:
-                        print(
-                            f'cash: {ours_info.cash}, plant cost: {actual_cost}, no money.')
+                        print(f'cash: {ours_info.cash}, plant cost: {actual_cost}, no money.')
+                    
+                    # 不种树就得动起来
                     safe_moves = self.get_safe_moves(planter)
                     if not safe_moves:
                         print('no safe moves, no money, stay still.')
-                        self.danger_zone[planter.position] = 1
                         continue
                     else:
                         next_move = safe_moves[0]
-
-                        new_position = planter.position.translate(
-                            next_move.to_point(), AREA_SIZE)
-                        self.danger_zone[new_position] = 1
-
-                        next_move_name = safe_moves[0].name
-                        move_action_dict[planter.id] = next_move_name
-                        print(f'no money, go to next place.  {next_move_name}')
+                        next_flag_position = get_moved_position(planter.position, next_move)
+                        planter.next_action = next_move
+                        print(f'no money, go to next place.  {next_move.name}')
+                        continue
+                else:
+                    # 有钱，那就不动，种树呗
+                    print('plant tree.')
+                    continue
             else:  # 没有执行完接着执行
-
                 # 重新估计一下目标的价值
                 # 1. 目标是否已经被敌方占领
                 # 2. 目标成本是否已经 > 收益
-
-                target_cell = cur_board[target_position]
+                target_cell = self.board[target_position]
                 is_enermy_tree = False
                 if target_cell.tree and target_cell.tree.player_id != ours_info.id:
                     # 敌方已经种了树
@@ -629,16 +662,12 @@ class PlanterAct(AgentBase):
                     self.planter_target.pop(planter.id)
                     safe_moves = self.get_safe_moves(planter)
                     if not safe_moves:
-                        print('no safe moves, stay still.')
-                        self.danger_zone[planter.position] = 1
+                        print('enermy is here, no safe moves, stay still.')
                         continue
+                    
                     random_from_safe_move = choice(safe_moves)
-
-                    new_position = planter.position.translate(
-                        random_from_safe_move.to_point(), AREA_SIZE)
-                    self.danger_zone[new_position] = 1
-
-                    move_action_dict[planter.id] = random_from_safe_move.name
+                    next_flag_position = get_moved_position(planter.position, random_from_safe_move)
+                    planter.next_action = random_from_safe_move
                     print(f'current position: {old_position}')
                     print(f'target position: {target_position}')
                     print('abondon this tree, it is protected by enermy.')
@@ -656,19 +685,16 @@ class PlanterAct(AgentBase):
 
                 if not safe_moves:
                     print('no safe moves, stay still.')
-                    self.danger_zone[planter.position] = 1
                     continue
 
                 has_short_path = False
                 for move in safe_moves:
-                    new_position = old_position.translate(
-                        move.to_point(), AREA_SIZE)
+                    new_position = get_moved_position(planter.position, move)
                     new_distance = get_distance(new_position, target_position)
 
                     if new_distance < old_distance:
-                        self.danger_zone[new_position] = 1
-
-                        move_action_dict[planter.id] = move.name
+                        next_flag_position = new_position
+                        planter.next_action = move
                         has_short_path = True
                         break
 
@@ -676,33 +702,39 @@ class PlanterAct(AgentBase):
                 if not has_short_path:
                     random_from_safe_move = choice(safe_moves)
 
-                    new_position = planter.position.translate(
-                        random_from_safe_move.to_point(), AREA_SIZE)
-                    self.danger_zone[new_position] = 1
-
-                    move_action_dict[planter.id] = random_from_safe_move.name
+                    next_flag_position = get_moved_position(planter.position, random_from_safe_move)
+                    planter.next_action = random_from_safe_move
+                    
                     print(f'old_distance: {old_distance}')
                     print(f'current position: {old_position}')
                     print(f'target position: {target_position}')
-                    print(
-                        f'in remaining route, no shutcut, random move {random_from_safe_move.name}')
+                    print(f'next position: {next_flag_position}')
+                    print(f'in remaining route, no shutcut, random move {random_from_safe_move.name}')
+        danger_zone[next_flag_position] = 1  # 标记最后一个 planter 的 postion
 
+        
+        # 最后再遍历一遍所有的 planter, 更新 move_action_dict 字典
+        for planter in ours_info.planters:
+            next_action = planter.next_action
+            if next_action:
+                move_action_dict[planter.id] = next_action.name
+        
         return move_action_dict
 
 
 def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
     # 计算position这个位置的碳含量在n步之后的预估数值（考虑上下左右四个位置的树的影响）
-    danger_zone = []
+    sorrounding_zone = []
     border = AREA_SIZE - 1
     x_left = position.x - 1 if position.x > 0 else border
     x_right = position.x + 1 if position.x < border else 0
     y_up = position.y - 1 if position.y > 0 else border
     y_down = position.y + 1 if position.y < border else 0
     # 上下左右4个格子
-    danger_zone.append(Point(position.x, y_up))
-    danger_zone.append(Point(x_left, position.y))
-    danger_zone.append(Point(x_right, position.y))
-    danger_zone.append(Point(position.x, y_down))
+    sorrounding_zone.append(Point(position.x, y_up))
+    sorrounding_zone.append(Point(x_left, position.y))
+    sorrounding_zone.append(Point(x_right, position.y))
+    sorrounding_zone.append(Point(position.x, y_down))
 
     start = 0
     target_cell = board.cells[position]
@@ -721,7 +753,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
     # 对于每一回合，分别计算有几颗树在吸position的碳
     for i in range(start, n):
         tree_count = 0
-        for p in danger_zone:
+        for p in sorrounding_zone:
             tree = board.cells[p].tree
             # 树在危险区域内
             if tree is not None:
@@ -1231,6 +1263,22 @@ class CollectorRushHomePlan(CollectorPlan):
     def translate_to_action(self):
         return super().translate_to_action()
 
+def set_danger_zone(danger_zone_dict, positions):
+    if isinstance(positions, List):
+        for pos in positions:
+            assert isinstance(pos, Point)
+            danger_zone_dict[pos] = 1
+    elif isinstance(positions, Point):
+        danger_zone_dict[positions] = 1
+    else:
+        raise ValueError(f'error positions {positions}')
+
+
+def get_cross_positions(cell: Cell):
+    """给定一个 cell，返回其上下左右四个格子的位置列表"""
+    positions = [c.position for c in [cell.up, cell.down, cell.left, cell.right]]
+    return positions
+
 
 class PlanningPolicy(BasePolicy):
     '''
@@ -1443,7 +1491,7 @@ class PlanningPolicy(BasePolicy):
                     possible_plan.target.position, 1)
                 source_agent_id_plan_dict[
                     possible_plan.source_agent.id] = possible_plan
-                self.danger_zone[possible_plan.target.position] = 1
+                danger_zone[possible_plan.target.position] = 1
             # Planter 的计划不在这里实现
             elif isinstance(possible_plan.source_agent, Planter):
                 pass
@@ -1526,14 +1574,16 @@ class PlanningPolicy(BasePolicy):
     # 被上层调用的函数
     # 所有规则为这个函数所调用
     def take_action(self, observation, configuration):
-        self.global_position_mask = dict()
+        # mask = 1 的位置不能再走了
+        self.global_position_mask: Dict[Point, int] = {}
 
         self.parse_observation(observation, configuration)
-        cur_board = self.game_state['board']
+        cur_board: Board = self.game_state['board']
         self.board = cur_board
-        ours, oppo = cur_board.current_player, cur_board.opponents
+        
+        ours, oppo = self.board.current_player, self.board.opponents
 
-        if cur_board.step > 280:
+        if self.board.step > 280:
             self.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight'] = -9
             self.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight'] = 1
             self.config['collector_config']['gohomethreshold'] = 99999
@@ -1544,11 +1594,13 @@ class PlanningPolicy(BasePolicy):
 
         attacker = self.set_attacker(ours)
 
+
         if ours.cash < 60 and len(ours.workers) < 4:
             self.attacker = None
             attacker = None
 
-        self.danger_zone = {}
+        global danger_zone
+        danger_zone = {}
 
         possible_plans = self.make_possible_plans()
         plans = self.possible_plans_to_plans(possible_plans)
@@ -1561,10 +1613,8 @@ class PlanningPolicy(BasePolicy):
 
         # 标记敌方 collector 的周围 cell, planter 不怕它
         for col in oppo[0].collectors:
-            cell_pos_list = [col.position, col.cell.up.position,
-                             col.cell.down.position, col.cell.left.position, col.cell.right.position]
-            for pos in cell_pos_list:
-                self.danger_zone[pos] = 1
+            cell_pos_list = [col.position] + get_cross_positions(col.cell)
+            set_danger_zone(danger_zone, cell_pos_list)
 
         # 种树员的策略从这里开始吧，独立出来
         # 种树员做决策去哪里种树
@@ -1572,11 +1622,10 @@ class PlanningPolicy(BasePolicy):
         planter_dict = self.planter_act.move(
             ours_info=ours,
             oppo_info=oppo,
-            map_carbon_location=cur_board.cells,
-            step=cur_board.step,
-            cur_board=cur_board,
-            configuration=configuration,
-            danger_zone=self.danger_zone
+            map_carbon_location=self.board.cells,
+            step=self.board.step,
+            cur_board=self.board,
+            configuration=configuration
         )
 
         attacker_dict = None
@@ -1585,9 +1634,9 @@ class PlanningPolicy(BasePolicy):
                 ours_info=ours,
                 oppo_info=oppo,
                 attacker=self.attacker,
-                map_carbon_location=cur_board.cells,
-                step=cur_board.step,
-                cur_board=cur_board,
+                map_carbon_location=self.board.cells,
+                step=self.board.step,
+                cur_board=self.board,
                 configuration=configuration
             )
 
@@ -1597,6 +1646,9 @@ class PlanningPolicy(BasePolicy):
         agent_id_2_action_number:
         {'player-0-worker-0': 1, 'player-0-worker-3': 2, 'player-0-worker-5': 4, 'player-0-worker-7': 4, 'player-0-worker-9': 3, 'player-0-recrtCenter-0': 2}
         """
+        
+        # 我觉得在这个地方统一遍历一遍我方所有的 agents，拿到其 next action就行
+        
         command_list = self.to_env_commands(agent_id_2_action_number)
         if planter_dict:
             command_list.update(planter_dict)
@@ -1604,7 +1656,7 @@ class PlanningPolicy(BasePolicy):
         if attacker_dict:
             command_list.update(attacker_dict)
 
-        print(f'\n\n---------step: [ {cur_board.step + 2} ]')
+        print(f'\n\n---------step: [ {self.board.step + 2} ]')
         print(command_list)
         # 这个地方返回一个cmd字典
         # 类似这样
