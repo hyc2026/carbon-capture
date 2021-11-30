@@ -164,7 +164,7 @@ class CollectorAct(AgentBase):
     def __init__(self):
         super().__init__()
         self.workaction = WorkerAction
-        self.collector_target = None  # 这个target是敌方collector的cell 或 敌方的base cell
+        self.collector_target: Cell = None  # 这个target是敌方collector的cell 或 敌方的base cell
 
     def _target_plan(self, collector: Collector, ours_info, oppo_info) -> Optional[Cell]:
         return 1
@@ -257,6 +257,7 @@ class CollectorAct(AgentBase):
 
     # 如果直接派捕碳员蹲在敌方基地会怎么样
     def move(self, ours_info: Player, oppo_info: List[Player], attacker: Collector, **kwargs):
+        # TODO: 下一步优化方向：派2个捕碳员去敌方家干扰
         move_action_dict = {}
         oppo_base = oppo_info[0].recrtCenters[0].cell
         self.collector_target = oppo_base
@@ -400,8 +401,7 @@ class PlanterAct(AgentBase):
             # 跳过 planter 当前位置
             if _cell.position == planter_position:
                 continue
-            planter_to_cell_distance = get_distance(
-                planter_position, _cell.position)  # 我们希望这个距离越小越好
+            planter_to_cell_distance = get_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
 
             if _cell.tree is None:  # 此位置没有树
                 if _cell.position in planned_target:
@@ -600,8 +600,6 @@ class PlanterAct(AgentBase):
                 # 如果当前种树员站在自己的树下面，同时树的附近(d<=2)有敌方种树员,那么不动，保护树
                 # 或者是敌人的树，抢树
                 continue
-
-            
             
             if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
 
@@ -681,6 +679,10 @@ class PlanterAct(AgentBase):
                     target_position = near_tree_cell.position
                     old_distance = get_distance(old_position, target_position)
 
+                # TODO: 如果此时已经发现目标碳含量不到原来一半了，直接改变 target
+                # 需要记录一下之前周围四个格子的碳含量
+
+                
                 safe_moves = self.get_safe_moves(planter)
 
                 if not safe_moves:
@@ -842,10 +844,10 @@ class BasePlan(ABC):
         self.preference_index = None  # 这个Plan的优先级因子
 
         self.config = self.planning_policy.config
-        self.board = self.planning_policy.game_state['board']
+        self.board: Board = self.planning_policy.game_state['board']
         self.env_config = self.planning_policy.game_state['configuration']
         self.global_position_mask = self.planning_policy.global_position_mask
-        self.our_player = self.planning_policy.game_state['our_player']
+        self.our_player: Player = self.planning_policy.game_state['our_player']
         self.planters_count = len(self.our_player.planters)
         self.collectors_count = len(self.our_player.collectors)
 
@@ -908,6 +910,11 @@ class SpawnPlanterPlan(RecrtCenterPlan):
         # 钱不够
         if self.our_player.cash < self.env_config['recPlanterCost']:
             return False
+        
+        # 如果 cash < 100 且 捕碳员 < 2
+        if self.our_player.cash < 100 and len(self.our_player.collectors) < 2:
+            return False  # 优先找捕碳员
+        
         return True
 
     def translate_to_action(self):
@@ -937,7 +944,13 @@ class SpawnCollectorPlan(RecrtCenterPlan):
             planter_count_weight = self.config['enabled_plans']['SpawnCollectorPlan']['planter_count_weight']
             collector_count_weight = self.config['enabled_plans']['SpawnCollectorPlan']['collector_count_weight']
 
-            self.preference_index =  \
+            our: Player = self.board.current_player
+            # 这里强行插入一条补丁
+
+            if self.board.step < 5 and our.cash > 30 and len(our.planters) == 0:
+                self.preference_index = 100
+            else:
+                self.preference_index =  \
                 (planter_count_weight * self.planters_count
                  + collector_count_weight * self.collectors_count + 1) / 1000 + 0.0001
 
