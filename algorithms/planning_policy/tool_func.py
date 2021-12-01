@@ -110,6 +110,87 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
         c = min(c, 100)
     return c  
 
+def get_distance_map(board: Board) -> Dict[(Tuple, Tuple), int]:
+
+    # 初始化参数
+    # 一个极大值
+    INF = int(1e9)
+    # 地图边长
+    LENGTH = 15
+    # 地图格子数
+    SIZE = 225
+    # 初始化距离地图
+    dist = [[INF for i in range(SIZE)] for j in range(SIZE)]
+    # 危险位置
+    dangerPos = []
+    # 返回答案
+    ans = {}
+
+    # 两个辅助函数：坐标和序号相互转换
+    def xy2pos(x: int, y: int) -> int:
+        x = max(x, 0)
+        x = min(x, LENGTH-1)
+        y = max(y, 0)
+        y = min(y, LENGTH-1)
+        return y * LENGTH + x
+
+    def pos2xy(pos: int) -> [int, int]:
+        x = (pos + 1) % LENGTH - 1
+        y = (pos + 1) // LENGTH
+        if x < 0:
+            x += LENGTH
+            y -= 1
+        return x, y
+
+    # 初始化环境：将每一格上下左右挨着的4格的距离设为1
+    for i in range(SIZE):
+        dist[i][i] = 0
+        if i - LENGTH >= 0:
+            dist[i][i - LENGTH] = 1
+        if not (i + 1) % LENGTH == 1:
+            dist[i][i - 1] = 1
+        if i + LENGTH < SIZE:
+            dist[i][i + LENGTH] = 1
+        if not (i + 1) % LENGTH == 0:
+            dist[i][i + 1] = 1
+
+    # 记录危险区域
+    for tree in board.trees.values():
+        if tree.player_id != board.current_player_id:
+            x = tree.position.x
+            y = tree.position.y
+            dangerPos.append(xy2pos(x-1, y-1))
+            dangerPos.append(xy2pos(x-1, y))
+            dangerPos.append(xy2pos(x-1, y+1))
+            dangerPos.append(xy2pos(x, y-1))
+            dangerPos.append(xy2pos(x, y))
+            dangerPos.append(xy2pos(x, y+1))
+            dangerPos.append(xy2pos(x+1, y-1))
+            dangerPos.append(xy2pos(x+1, y))
+            dangerPos.append(xy2pos(x+1, y+1))
+
+    # 将该区域设为不可通行
+    for pos in dangerPos:
+        for i in range(SIZE):
+            dist[i][pos] = -1
+            dist[pos][i] = -1
+
+    # 计算距离
+    for k in range(SIZE):
+        for i in range(SIZE):
+            for j in range(SIZE):
+                if dist[i][k] != -1 and dist[k][j] != -1:
+                    if dist[i][j] > dist[i][k] + dist[k][j]:
+                        dist[i][j] = dist[i][k] + dist[k][j]
+
+    # 按格式返回
+    for i in range(SIZE):
+        for j in range(SIZE):
+            ans[(pos2xy(i)), (pos2xy(j))] = dist[i][j] if dist[i][j] != -1 else INF
+
+    return ans
+
+
 
 policy=PlanningPolicy()
 logs = []
