@@ -918,7 +918,7 @@ class SpawnPlanterPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        if self.global_position_mask.get(self.source_agent.position, 0) == 0:
+        if self.source_agent.position not in self.global_position_mask:
             self.global_position_mask[self.source_agent.position] = 1
             return RecrtCenterAction.RECPLANTER
         else:
@@ -983,7 +983,7 @@ class SpawnCollectorPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        if self.global_position_mask.get(self.source_agent.position, 0) == 0:
+        if self.source_agent.position not in self.global_position_mask:
             self.global_position_mask[self.source_agent.position] = 1
             return RecrtCenterAction.RECCOLLECTOR
         else:
@@ -999,7 +999,7 @@ class CollectorPlan(BasePlan):
         return yes_it_is
 
     def can_action(self, action_position):
-        if self.global_position_mask.get(action_position, 0) == 0:
+        if action_position not in self.global_position_mask:
             action_cell = self.board._cells[action_position]
             flag = True
             collectors = [action_cell.collector,
@@ -1025,9 +1025,7 @@ class CollectorPlan(BasePlan):
         potential_carbon = -1
         source_position = self.source_agent.position
         target_position = self.target.position
-        source_target_distance = self.planning_policy.get_distance(
-            source_position[0], source_position[1], target_position[0],
-            target_position[1])
+        source_target_distance = get_distance(source_position, target_position)
 
         potential_action_list = []
 
@@ -1041,13 +1039,9 @@ class CollectorPlan(BasePlan):
             if not self.can_action(action_position):
                 continue
 
-            target_action_distance = self.planning_policy.get_distance(
-                target_position[0], target_position[1], action_position[0],
-                action_position[1])
+            target_action_distance = get_distance(target_position, action_position)
 
-            source_action_distance = self.planning_policy.get_distance(
-                source_position[0], source_position[1], action_position[0],
-                action_position[1])
+            source_action_distance = get_distance(source_position, action_position)
 
             potential_action_list.append((action,
                                          action_position,
@@ -1090,9 +1084,7 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
                 return False
             center_position = self.our_player.recrtCenters[0].position
             source_posotion = self.source_agent.position
-            source_center_distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], center_position[0],
-                center_position[1])
+            source_center_distance = get_distance(source_posotion, center_position)
             if source_center_distance >= 300 - self.board.step - 4:
                 return False
         return True
@@ -1104,13 +1096,9 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
         else:
             source_posotion = self.source_agent.position
             target_position = self.target.position
-            distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], target_position[0],
-                target_position[1])
+            distance = get_distance(source_posotion, target_position)
 
-            self.preference_index = get_cell_carbon_after_n_step(self.board,
-                                                                 self.target.position,
-                                                                 distance) / (distance + 1)
+            self.preference_index = get_cell_carbon_after_n_step(self.board, self.target.position, distance) / (distance + 1)
 
     def translate_to_action(self):
         return super().translate_to_action()
@@ -1137,9 +1125,7 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
                 return False
             center_position = self.our_player.recrtCenters[0].position
             source_posotion = self.source_agent.position
-            source_center_distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], center_position[0],
-                center_position[1])
+            source_center_distance = get_distance(source_posotion, center_position)
             if source_center_distance >= 300 - self.board.step - 4:
                 return False
         return True
@@ -1153,26 +1139,18 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
             target_position = self.target.position
 
             center_position = self.our_player.recrtCenters[0].position
-            target_center_distance = self.planning_policy.get_distance(
-                center_position[0], center_position[1], target_position[0],
-                target_position[1])
+            target_center_distance = get_distance(center_position, target_position)
 
-            source_target_distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], target_position[0],
-                target_position[1])
+            source_target_distance = get_distance(source_posotion, target_position)
 
-            source_center_distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], target_position[0],
-                target_position[1])
+            source_center_distance = get_distance(source_posotion, target_position)
 
             if target_center_distance + source_target_distance == source_center_distance:
-                self.preference_index = get_cell_carbon_after_n_step(self.board,
-                                                                     self.target.position,
-                                                                     source_target_distance) / (source_target_distance + 1) + 100
+                self.preference_index = \
+                    get_cell_carbon_after_n_step(self.board, self.target.position, source_target_distance) / (source_target_distance + 1) + 100
             else:
-                self.preference_index = get_cell_carbon_after_n_step(self.board,
-                                                                     self.target.position,
-                                                                     source_target_distance) / (source_target_distance + 1) - 100
+                self.preference_index = \
+                    get_cell_carbon_after_n_step(self.board, self.target.position, source_target_distance) / (source_target_distance + 1) - 100
 
     def translate_to_action(self):
         return super().translate_to_action()
@@ -1201,9 +1179,7 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
             # 与转化中心距离大于1
             center_position = self.our_player.recrtCenters[0].position
             source_position = self.source_agent.position
-            if self.planning_policy.get_distance(
-                    source_position[0], source_position[1], center_position[0],
-                    center_position[1]) > 1:
+            if get_distance(source_position, center_position) > 1:
                 return False
             # target 不是转化中心
             target_position = self.target.position
@@ -1251,9 +1227,7 @@ class CollectorRushHomePlan(CollectorPlan):
 
             center_position = self.our_player.recrtCenters[0].position
             source_posotion = self.source_agent.position
-            source_center_distance = self.planning_policy.get_distance(
-                source_posotion[0], source_posotion[1], center_position[0],
-                center_position[1])
+            source_center_distance = get_distance(source_posotion, center_position)
 
             if self.target.position[0] != center_position[0] or \
                     self.target.position[1] != center_position[1]:
@@ -1390,17 +1364,6 @@ class PlanningPolicy(BasePolicy):
         self.board = None
         self.attacker = None
 
-    # get Chebyshev distance of two positions, x mod self.config['row_count] ,y
-    # mod self.config['column_count]
-    def get_distance(self, x1, y1, x2, y2):
-        x_1_to_2 = (x1 - x2 +
-                    self.config['row_count']) % self.config['row_count']
-        y_1_to_2 = (
-            y1 - y2 +
-            self.config['column_count']) % self.config['column_count']
-        dis_x = min(self.config['row_count'] - x_1_to_2, x_1_to_2)
-        dis_y = min(self.config['column_count'] - y_1_to_2, y_1_to_2)
-        return dis_x + dis_y
 
     @staticmethod
     def to_env_commands(policy_actions: Dict[str, int]) -> Dict[str, str]:
