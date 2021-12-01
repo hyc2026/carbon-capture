@@ -208,8 +208,11 @@ class CollectorAct(AgentBase):
     def get_safe_moves(self, collector: Collector):
         safe_moves = []
         for move in WorkerAction.moves():
+            next_pos = get_moved_position(collector.position, move)
+            # 不能去敌方基地，危险
+            if next_pos == self.oppo_base.position:
+                continue
             safe_moves.append(move)
-            # TODO: 加入 attacker 是无敌的呢？？？
             # if self._check_surround_validity(move, collector):
             # safe_moves.append(move)
         return safe_moves
@@ -217,10 +220,9 @@ class CollectorAct(AgentBase):
     def get_near_enermy_cell(self, collector: Collector):
         # d <= 2 距离内的情况
         our_id = collector.player_id
-        pcell = collector.cell
-        check_cells = [
-            (pcell.up, 'UP'), (pcell.down, 'DOWN'), (pcell.left,
-                                                     'LEFT'), (pcell.right, 'RIGHT'),
+        pcell: Cell = collector.cell
+        check_cells: Tuple[Cell, str] = [
+            (pcell.up, 'UP'), (pcell.down, 'DOWN'), (pcell.left, 'LEFT'), (pcell.right, 'RIGHT'),
             # pcell.up.left, pcell.up.right, pcell.up.up,
             # pcell.down.down, pcell.down.left, pcell.down.right,
             # pcell.left.left, pcell.right.right
@@ -237,6 +239,8 @@ class CollectorAct(AgentBase):
                         max_carbon = worker.carbon
                         best_cell = cell
                         best_move_name = move_name
+        if best_cell.position == self.oppo_base.position:
+            return None, None
         if best_move_name:
             return best_cell, best_move_name
         return None, None
@@ -255,17 +259,26 @@ class CollectorAct(AgentBase):
         else:
             return oppo.recrtCenters[0].cell
 
-    # 如果直接派捕碳员蹲在敌方基地会怎么样
+
     def move(self, ours_info: Player, oppo_info: List[Player], attacker: Collector, **kwargs):
-        # TODO: 下一步优化方向：派2个捕碳员去敌方家干扰
         move_action_dict = {}
-        oppo_base = oppo_info[0].recrtCenters[0].cell
-        self.collector_target = oppo_base
+        cur_board: Board = kwargs['cur_board']
+        self.board = cur_board
+        self.oppo: List[Player] = oppo_info
+        oppo_base: Cell = oppo_info[0].recrtCenters[0].cell
+        self.oppo_base: Cell = oppo_base
         # 距离敌方基地的距离
         dis2oppobase = get_distance(attacker.position, oppo_base.position)
 
-        if attacker.position == oppo_base.position:
-            return move_action_dict
+        if dis2oppobase > 4:
+            self.collector_target = choice(get_cross_cells(oppo_base))
+        else:
+            # 检查周围 d <= 2 范围内有没有敌人
+            near_enermy_cell, move_name = self.get_near_enermy_cell(attacker)
+            if move_name:
+                self.collector_target = near_enermy_cell
+                move_action_dict[attacker.id] = move_name
+                return move_action_dict
 
         # 考虑如何移动
         # 只要保证不伤害我方人员即可
@@ -292,49 +305,6 @@ class CollectorAct(AgentBase):
         print(f'attacker position: {attacker.position}')
         print(f'attacker move: {move_action_dict}')
         return move_action_dict
-
-    
-    # def move(self, ours_info: Player, oppo_info: List[Player], attacker: Collector, **kwargs):
-    #     move_action_dict = {}
-    #     oppo_base = oppo_info[0].recrtCenters[0].cell
-    #     # 距离敌方基地的距离
-    #     dis2oppobase = get_distance(attacker.position, oppo_base.position)
-
-    #     if dis2oppobase > 4:
-    #         self.collector_target = oppo_base
-    #     else:
-    #         # 检查周围 d <= 2 范围内有没有敌人
-    #         near_enermy_cell, move_name = self.get_near_enermy_cell(attacker)
-    #         if move_name:
-    #             self.collector_target = near_enermy_cell
-    #             move_action_dict[attacker.id] = move_name
-    #             return move_action_dict
-
-    #     # 考虑如何移动
-    #     # 只要保证不伤害我方人员即可
-    #     safe_moves = self.get_safe_moves(attacker)
-    #     if not safe_moves:
-    #         print('attacker: no safe moves, stay still.')
-    #         return
-    #     else:
-    #         old_position = attacker.position
-    #         target_position = self.collector_target.position
-    #         old_distance = get_distance(old_position, target_position)
-    #         move_name_list = []
-    #         for move in safe_moves:
-    #             new_position = old_position.translate(
-    #                 move.to_point(), AREA_SIZE)
-    #             new_distance = get_distance(new_position, target_position)
-    #             if new_distance < old_distance:
-    #                 move_name_list.append(move.name)
-    #         if len(move_name_list) == 0:
-    #             move_action_dict[attacker.id] = choice(safe_moves).name
-    #         else:
-    #             move_action_dict[attacker.id] = choice(move_name_list)
-
-    #     print(f'attacker position: {attacker.position}')
-    #     print(f'attacker move: {move_action_dict}')
-    #     return move_action_dict
 
 
 class PlanterAct(AgentBase):
@@ -1265,6 +1235,12 @@ def get_cross_positions(cell: Cell):
     """给定一个 cell，返回其上下左右四个格子的位置列表"""
     positions = [c.position for c in [cell.up, cell.down, cell.left, cell.right]]
     return positions
+
+
+def get_cross_cells(cell: Cell):
+    """给定一个 cell，返回其上下左右四个格子的位置列表"""
+    cells = [c for c in [cell.up, cell.down, cell.left, cell.right]]
+    return cells
 
 
 class PlanningPolicy(BasePolicy):
