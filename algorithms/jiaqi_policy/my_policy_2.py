@@ -24,9 +24,9 @@ TOP_CARBON_CONTAIN_FOR_PLANTER = 5   # 這個要小一些
 PREEMPT_BONUS = 5000
 TREE_PLANTED_LIMIT = 5  # 在场树的数量大于该值，则停止种树, 优先抢树
 CARBON_SATISFY = 1000   # 越小捕碳员活动范围越小
-COLLECTOR_CARBON_CARRY_LIMIT = 150
+COLLECTOR_CARBON_CARRY_LIMIT = 120
 CELL_CARBON_REMAIN = 25  # 单元当前含碳量小于该值，捕碳员会去其他位置补碳
-GO_HOME_STEPS = 280
+GO_HOME_STEPS = 285
 
 
 class BasePolicy:
@@ -153,8 +153,6 @@ class AgentBase:
 # ---------------------------------------------------------------------------------------------------------------------
 
 
-
-
 def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
     """遍历地图上每一个位置，附近碳最多的位置按从多到少进行排序"""
     carbon_contain_dict = dict()  # 用来存储地图上每一个位置周围4个位置当前的碳含量, {(0, 0): 32}
@@ -202,7 +200,7 @@ class SubMap:
                     new_sub_map.append(new_action)
 
             new_sub_map = list(set(new_sub_map))
-            self.init_sub_map = new_sub_map
+            self.init_sub_map.extend(new_sub_map)
             yield self.init_sub_map
 
             step += 1
@@ -565,6 +563,7 @@ class RecruiterAct(AgentBase):
     def action(self, ours_info, steps):
         store_dict = dict()
         if (ours_info.recrtCenters[0].cell.worker is None) and (steps < GO_HOME_STEPS):   # # 确定基地位置没有任何Agent才能进行招募
+
 
             if ours_info.cash < 100:
                 if len(ours_info.collectors) < 2:

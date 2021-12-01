@@ -591,199 +591,134 @@ class PlanterAct(AgentBase):
     def __init__(self):
         super().__init__()
         self.workaction = WorkerAction
-        self.planter_target = dict()
 
-    @ staticmethod
-    def _minimum_distance(point_1, point_2):
-        abs_distance = abs(point_1 - point_2)
-        cross_distance = min(point_1, point_2) + (15 - max(point_1, point_2))  # TODO: 这里对吗，是14减?
-        return min(abs_distance, cross_distance)
-
-    def _calculate_distance(self, planter_position, current_position):
-        """计算真实距离，计算跨图距离，取两者最小值"""
-        x_distance = self._minimum_distance(planter_position[0], current_position[0])
-        y_distance = self._minimum_distance(planter_position[1], current_position[1])
-
-        return x_distance + y_distance
-
-    def _target_plan(self, planter: Planter, carbon_sort_dict: Dict, ours_info, oppo_info):
-        """结合某一位置的碳的含量和距离"""
-        # TODO：钱够不够是否考虑？
-        planter_position = planter.position
-        # 取碳排量最高的前十
-        carbon_sort_dict_top_n = \
-            {_v: _k for _i, (_v, _k) in enumerate(carbon_sort_dict.items()) if _i < 100}  # 只选取含碳量top_n的cell来进行计算，拿全部的cell可能会比较耗时？
-        # 计算planter和他的相对距离，并且结合该位置四周碳的含量，得到一个总的得分
-        planned_target = [Point(*_v.position) for _k, _v in self.planter_target.items()]
-        max_score, max_score_cell = -1e9, None
-        for _cell, _carbon_sum in carbon_sort_dict_top_n.items():
-            if (_cell.tree is None) and (_cell.position not in planned_target) and (_cell.recrtCenter is None):  # 这个位置没有树，且这个位置不在其他智能体正在进行的plan中
-                planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)  # 我们希望这个距离越小越好
-                target_preference_score = 0 * _carbon_sum + np.log(1 / (planter_to_cell_distance + 1e-9)) # 不考虑碳总量只考虑距离 TODO: 这会导致中了很多树，导致后期花费很高
-                target_preference_score = _carbon_sum + planter_to_cell_distance * (-10)
-
-                if planter_to_cell_distance == 0:
-                    target_preference_score += _carbon_sum
-
-                if planter_to_cell_distance==1:
-                    target_preference_score += _carbon_sum*0.5
-
-                #target_preference_score = min(_carbon_sum*(1.05**planter_to_cell_distance)/(planter_to_cell_distance+1), 200)
-
-                if target_preference_score > max_score:
-                    max_score = target_preference_score
-                    max_score_cell = _cell
-
-        if planter.player_id==0:
-            center = (10, 4)
-        else:
-            center = (4, 10)
-
-        for _cell, _carbon_sum in carbon_sort_dict.items():
-            if self.expendable_id==planter.id and _cell.position!=center \
-                    and (_cell.tree is None or _cell.tree.player_id != planter.player_id):
-                target_preference_score = 10000+_carbon_sum + planter_to_cell_distance * (-20) #+ 10*len(oppo_info[0].collectors)
-                if target_preference_score > max_score:
-                    max_score = target_preference_score
-                    max_score_cell = _cell
-
-            if not _cell.tree is None:
-                if _cell.tree.player_id != planter.player_id:
-                    cell_to_center_dis = self._calculate_distance(_cell.position, ours_info.recrtCenters[0].position)
-                    planter_to_cell_distance = self._calculate_distance(planter_position, _cell.position)
-                    if 50 - (_cell.tree.age + planter_to_cell_distance) <10 and cell_to_center_dis>2:
-                        continue
-                    target_preference_score = 0 * _carbon_sum + np.log(1 / (planter_to_cell_distance + 1e-9)) + 200
-                    if len(ours_info.trees)+len(oppo_info[0].trees)>8:
-                        pri = 5000
-                    else:
-                        pri = 2000
-
-                    _carbon_sum = (50 - (_cell.tree.age + planter_to_cell_distance))*8
-                    target_preference_score = _carbon_sum + planter_to_cell_distance * (-10) + pri + \
-                                              (self.cal_tree_money(len(ours_info.trees)+len(oppo_info[0].trees)) - 20)*1.5
-                    if cell_to_center_dis<=2:
-                        target_preference_score += 2000
-                    else:
-                        target_preference_score += 1/cell_to_center_dis * 500
-                    #if planter_to_cell_distance>4:
-                    #    target_preference_score -= 2**planter_to_cell_distance
-                    if target_preference_score > max_score:
-                        max_score = target_preference_score
-                        max_score_cell = _cell
-
-        if max_score_cell is None:  # 没有找到符合条件的最大得分的cell，随机选一个cell
-            max_score_cell = random.choice(list(carbon_sort_dict_top_n))
-
-        return max_score_cell
-
-    def _check_surround_validity(self, move: WorkerAction, planter: Planter) -> bool:
+    def _check_surround_validity(self, move: WorkerAction, worker) -> bool:
         move = move.name
         if move == 'UP':
-            # 需要看前方三个位置有没有Agent
-            check_cell_list = [planter.cell.up, planter.cell.up.left, planter.cell.up.right, planter.cell.up.up]
+            # 需要看前方四个位置有没有Agent
+            check_cell_list = [worker.cell.up, worker.cell.up.up, worker.cell.up.left, worker.cell.up.right]
         elif move == 'DOWN':
-            check_cell_list = [planter.cell.down, planter.cell.down.left, planter.cell.down.right, planter.cell.down.down]
+            check_cell_list = [worker.cell.down, worker.cell.down.down, worker.cell.down.left, worker.cell.down.right]
         elif move == 'RIGHT':
-            check_cell_list = [planter.cell.right, planter.cell.right.up, planter.cell.right.down, planter.cell.right.right]
+            check_cell_list = [worker.cell.right, worker.cell.right.right, worker.cell.right.up, worker.cell.right.down]
         elif move == 'LEFT':
-            check_cell_list = [planter.cell.left, planter.cell.left.up, planter.cell.left.down, planter.cell.left.left]
+            check_cell_list = [worker.cell.left, worker.cell.left.left, worker.cell.left.up, worker.cell.left.down]
         else:
             raise NotImplementedError
 
-        global overall_plan
-        return all([True if ((_c.collector is None or (_c.collector.player_id != planter.player_id)) and
-                             (not _c.position in overall_plan)) else False for _c in check_cell_list])
+        check_list = list()
+        for _c in check_cell_list:
+            if _c.worker is None:
+                check_list.append(True)
+            else:
+                if int(_c.worker_id.split('-')[1]) == worker.player_id:   # 不躲我方种树员，只躲补碳员
+                    check_list.append(True)
+                else:  # 不是自己人
+                    if _c.planter is not None:  # 不躲敵方種樹
+                        check_list.append(True)  # 不躲
+                    else:  # 躲敵方補碳
+                        check_list.append(False)
 
-    def cal_tree_money(self, tree_num):
-        return 5 * 1.235 ** tree_num
+        return all([True if (_c.collector is None) and (_c.planter is None) else False for _c in check_cell_list])
 
-    def move(self, ours_info, oppo_info, **kwargs):
-        global overall_plan
+    def _target_plan(self, planter: Planter, carbon_sort_dict: Dict, carbon_sort_dict_top_n,
+                     ours_info, oppo_info) -> List:
+        """Planter 我们的种树员，carbon_sort_dict Cell碳含量从多到少排序"""
+
+        planter_position = planter.position
+        # 取碳排量最高的前n
+
+        """在这个范围之内，有树先抢树，没树了再种树，种树也要有个上限，种的树到达一定数量之后，开始保护树"""
+
+        # 计算planter和他的相对距离，并且结合该位置四周碳的含量，得到一个总的得分
+        planned_target = [Point(*_v.position) for _k, _v in self.worker_target.items()]   # 计划的位置
+        tree_num_sum = len(ours_info.trees) + len(oppo_info.trees)  # 在场所有树的数量
+        target_preference_score = -1e9
+        max_score_cell_dict = dict()
+
+        for _cell, _carbon_sum in carbon_sort_dict.items():
+
+            planter_to_cell_distance = self._calculate_distance(planter_position,
+                                                                _cell.position)  # 我们希望这个距离越小越好
+            if _cell.position not in planned_target:
+
+                if _cell.tree is None:
+
+                    if (_cell in carbon_sort_dict_top_n) and \
+                            (_cell.recrtCenter is None) and (tree_num_sum <= TREE_PLANTED_LIMIT):
+
+                        target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9))  #log的 max: 20左右， _carbon_sum的max最大400, 3乘表示更看重carbon_sum
+
+                else:
+
+                    tree_player_id = _cell.tree.player_id
+
+                    if tree_player_id == oppo_info.id:   # 是对方的树
+
+                        target_preference_score = PREEMPT_BONUS + np.log(1 / (planter_to_cell_distance + 1e-9))   #   加一个大数，表示抢敌方树优先，抢敌方距离最近的树优先
+
+                    if (tree_player_id == ours_info.id) and (tree_num_sum > TREE_PLANTED_LIMIT):  # 是我方的树，那就开始保护我方的树
+
+                        target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9))
+
+            max_score_cell_dict[_cell] = target_preference_score
+
+        max_score_cell_dict = \
+            sorted(max_score_cell_dict.items(), key=lambda x: x[1], reverse=True)
+
+        return max_score_cell_dict[0][0]
+
+    def move(self, ours_info, oppo_info, map_carbon_location):
+
         move_action_dict = dict()
 
         """需要知道本方当前位置信息，敵方当前位置信息，地图上的碳的分布"""
         # 如果planter信息是空的，则无需执行任何操作
-        if ours_info.planters == []:
-            return None
+        # if ours_info.planters == []:
+        #     return None, None
 
-        map_carbon_cell = kwargs["map_carbon_location"]
+        map_carbon_cell = map_carbon_location
         carbon_sort_dict = calculate_carbon_contain(map_carbon_cell)  # 每一次move都先计算一次附近碳多少的分布
-
-        min_dis = 100000
-        expendable = -1
-        self.expendable_id = -1
-        '''
-        for planter in ours_info.planters:
-            planter_to_oppo_dis = self._calculate_distance(planter.position, oppo_info[0].recrtCenters[0].position)
-            min_dis = min(min_dis, planter_to_oppo_dis)
-            if min_dis==planter_to_oppo_dis and len(oppo_info[0].collectors)>4:
-                self.expendable_id = planter.id
-        '''
+        carbon_sort_dict_top_n = \
+            [_k for _i, (_k, _) in enumerate(carbon_sort_dict.items()) if _i < TOP_CARBON_CONTAIN_FOR_PLANTER]  # 只选取含碳量top_n的cell来进行计算。
 
         for planter in ours_info.planters:
-            # 先给他随机初始化一个行动
-            if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
-                target_cell = self._target_plan(planter, carbon_sort_dict, ours_info, oppo_info)  # 返回这个智能体要去哪里的一个字典
-                self.planter_target[planter.id] = target_cell  # 给它新的行动
-            #else:  # 说明他有策略，看策略是否执行完毕，执行完了移出字典，没有执行完接着执行
-            if planter.position == self.planter_target[planter.id].position:
-                # 执行一次种树行动, TODO: 如果钱够就种树，钱不够不执行任何操作
-                # move_action_dict[planter.id] = None
-                # TODO: 这里不执行任何行动就表示种树了？
-                # 移出字典
-                money = 20 + self.cal_tree_money(len(ours_info.trees)+len(oppo_info[0].trees))
-                if (planter.cell.tree is not None) and planter.cell.tree.player_id!=planter.player_id:
-                    money = 20
-                carbon = cal_carbon_one_cell(planter.cell, map_carbon_cell)
-                if (money * 1.3 < carbon or money<50) and (kwargs['step']<290):
-                    overall_plan[planter.position] = 1
-                else:
-                    filtered_list_act = WorkerAction.moves()
-                    for move in WorkerAction.moves():
-                        if not self._check_surround_validity(move, planter):
-                            filtered_list_act.remove(move)
 
-                    if len(filtered_list_act) == 0:
-                        filtered_list_act.append(move)
-                    if not planter.id in move_action_dict:
-                        tmp = random.choice(filtered_list_act)
-                        move_action_dict[planter.id] = tmp.name
-                        new_position = cal_new_pos(planter.position, tmp)
-                        overall_plan[new_position] = 1
+            if planter.id not in self.worker_target:   # 说明他还没有策略，要为其分配新的策略
 
-                self.planter_target.pop(planter.id)
+                target_cell = self._target_plan(planter=planter,
+                                                carbon_sort_dict=carbon_sort_dict, carbon_sort_dict_top_n=carbon_sort_dict_top_n,
+                                                ours_info=ours_info, oppo_info=oppo_info[0])  # 返回这个智能体要去哪里的一个字典
+
+                self.worker_target[planter.id] = target_cell
+
+            if planter.position == self.worker_target[planter.id].position:   # 当前的planter目标执行完了,
+
+                self.worker_target.pop(planter.id)
 
             else:  # 没有执行完接着执行
+
                 old_position = planter.position
-                target_position = self.planter_target[planter.id].position
+                target_position = self.worker_target[planter.id].position
                 old_distance = self._calculate_distance(old_position, target_position)
 
-                filtered_list_act = WorkerAction.moves()
                 for move in WorkerAction.moves():
-                    if not self._check_surround_validity(move, planter):
-                        filtered_list_act.remove(move)
-
-                for move in WorkerAction.moves():
-                    new_position = cal_new_pos(old_position, move)
+                    new_position = old_position + move.to_point()
+                    new_position = str(new_position).replace("15", "0")
+                    new_position = Point(*eval(new_position.replace("-1", "14")))
                     new_distance = self._calculate_distance(new_position, target_position)
 
                     if new_distance < old_distance:
                         if self._check_surround_validity(move, planter):
                             move_action_dict[planter.id] = move.name
-                            overall_plan[new_position] = 1
-                            break
-
-                if len(filtered_list_act)==0:
-                    filtered_list_act.append(move)
-                if not planter.id in move_action_dict:
-                    tmp = random.choice(filtered_list_act)
-                    move_action_dict[planter.id] = tmp.name
-                    new_position = cal_new_pos(old_position, tmp)
-                    overall_plan[new_position] = 1
-
-                self.planter_target.pop(planter.id)
-
+                        else:   # 随机移动，不要静止不动或反向移动，否则当我方多个智能体相遇会卡主
+                            self._move_action = copy.deepcopy(self.move_action)
+                            self._move_action.remove(move)
+                            move_check = self._random_move_with_check(current_move_candidate=self._move_action,
+                                                                 worker=planter,
+                                                                 current_move=move)
+                            if move_check is not None:
+                                move_action_dict[planter.id] = move_check.name
         return move_action_dict
 
 
@@ -848,7 +783,6 @@ class PlanningPolicy(BasePolicy):
             ours_info=ours,
             oppo_info=oppo,
             map_carbon_location=current_obs.cells,
-            step=current_obs.step,
         )
 
         if planter_dict is not None:
