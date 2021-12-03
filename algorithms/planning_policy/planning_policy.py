@@ -165,6 +165,17 @@ class BasePlan(ABC):
         self.planning_policy = planning_policy
         self.preference_index = None  #这个Plan的优先级因子
 
+    def get_distance2target(self):
+        source_position = self.source_agent.position
+        #获取target(包括智能体和Cell)对应的cell
+        target_position = self.target.position if isinstance(
+            self.target, Cell) else self.target.cell.position
+        distance = self.planning_policy.get_distance(source_position[0],
+                                                     source_position[1],
+                                                     target_position[0],
+                                                     target_position[1])
+        return distance
+        
     #根据Plan生成Action
     @abstractmethod
     def translate_to_action(self):
@@ -305,14 +316,6 @@ class PlanterPlan(BasePlan):
         yes_it_is = isinstance(self.source_agent, Planter)
         return yes_it_is
 
-    def get_distance2target(self):
-        source_position = self.source_agent.position
-        target_position = self.target.position
-        distance = self.planning_policy.get_distance(source_position[0],
-                                                     source_position[1],
-                                                     target_position[0],
-                                                     target_position[1])
-        return distance
 
     def get_total_carbon(self, distance=0):
         target_carbon_expect = 0
