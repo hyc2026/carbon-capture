@@ -13,32 +13,39 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              RecrtCenterAction, WorkerAction)
 from random import randint, shuffle
 
+# 基地动作
+BaseActions = [
+    None, RecrtCenterAction.RECCOLLECTOR, RecrtCenterAction.RECPLANTER
+]
 
-BaseActions = [None,
-               RecrtCenterAction.RECCOLLECTOR,
-               RecrtCenterAction.RECPLANTER]
+# 种树员和捕碳员/车的动作
+WorkerActions = [
+    None, WorkerAction.UP, WorkerAction.RIGHT, WorkerAction.DOWN,
+    WorkerAction.LEFT
+]
 
-WorkerActions = [None,
-                 WorkerAction.UP,
-                 WorkerAction.RIGHT,
-                 WorkerAction.DOWN,
-                 WorkerAction.LEFT]
+# Worker的四个方向(np.array)
+WorkerDirections = np.stack([
+    np.array((0, 0)),
+    np.array((0, 1)),
+    np.array((1, 0)),
+    np.array((0, -1)),
+    np.array((-1, 0))
+])  # 与WorkerActions相对应
 
-WorkerDirections = np.stack([np.array((0, 0)),
-                             np.array((0, 1)),
-                             np.array((1, 0)),
-                             np.array((0, -1)),
-                             np.array((-1, 0))])  # 与WorkerActions相对应
+Action2Direction = {
+    None: np.array((0, 0)),
+    WorkerAction.UP: np.array((0, 1)),
+    WorkerAction.RIGHT: np.array((1, 0)),
+    WorkerAction.DOWN: np.array((0, -1)),
+    WorkerAction.LEFT: np.array((-1, 0))
+}
 
-Action2Direction = {None: np.array((0, 0)),
-                    WorkerAction.UP: np.array((0, 1)),
-                    WorkerAction.RIGHT: np.array((1, 0)),
-                    WorkerAction.DOWN: np.array((0, -1)),
-                    WorkerAction.LEFT: np.array((-1, 0))
-                    }
 
-def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
-    # 计算position这个位置的碳含量在n步之后的预估数值（考虑上下左右四个位置的树的影响）
+def get_cell_carbon_after_n_step(board: Board, position: Point,
+                                 n: int) -> float:
+    # 计算position这个位置的碳含量在n步之后的预估数值
+    # 考虑 当前上下左右四个位置的树的影响 
     danger_zone = []
     x_left = position.x - 1 if position.x > 0 else 14
     x_right = position.x + 1 if position.x < 14 else 0
@@ -49,13 +56,15 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
     danger_zone.append(Point(x_left, position.y))
     danger_zone.append(Point(x_right, position.y))
     danger_zone.append(Point(position.x, y_down))
-    
+
     start = 0
     target_cell = board.cells[position]
     c = target_cell.carbon
+
+    # 当前回合
     if n == 0:
         return c
-    
+
     # position的位置有树，直接从树暴毙之后开始算
     if target_cell.tree is not None:
         start = 50 - target_cell.tree.age + 1
@@ -63,7 +72,7 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
             c = 30.0
         else:
             return 0
-            
+
     # 对于每一回合，分别计算有几颗树在吸position的碳
     for i in range(start, n):
         tree_count = 0
@@ -106,7 +115,9 @@ class BasePolicy:
         """
         return False
 
-    def get_actions(self, observation, available_actions=None) -> Tuple[np.ndarray, np.ndarray]:
+    def get_actions(self,
+                    observation,
+                    available_actions=None) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute actions predictions for the given inputs.
         :param observation:  (np.ndarray) local agent inputs to the actor.
@@ -118,7 +129,6 @@ class BasePolicy:
         """
         raise NotImplementedError("not implemented")
 
-
     @staticmethod
     def to_env_commands(policy_actions: Dict[str, int]) -> Dict[str, str]:
         """
@@ -127,11 +137,11 @@ class BasePolicy:
         :return env_commands: (Dict[str, str]) Commands environment can accept,
             which specifies the agent name and the command string (None is the stay command, no need to send!).
         """
-
         def agent_action(agent_name, command_value) -> str:
             # hack here, 判断是否为转化中心,然后返回各自的命令
             actions = BaseActions if 'recrtCenter' in agent_name else WorkerActions
-            return actions[command_value].name if 0 < command_value < len(actions) else None
+            return actions[command_value].name if 0 < command_value < len(
+                actions) else None
 
         env_commands = {}
         for agent_id, cmd_value in policy_actions.items():
@@ -182,16 +192,18 @@ class SpawnPlanterPlan(RecrtCenterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
-            self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
+            self_planters_count = self.planning_policy.game_state[
+                'our_player'].planters.__len__()
+            self_collectors_count = self.planning_policy.game_state[
+                'our_player'].collectors.__len__()
             self.preference_index =  (self.planning_policy.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight'] * self_planters_count \
                 + self.planning_policy.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight'] * self_collectors_count \
                 + 1) / 1000
 
     def check_validity(self):
         #没有开启
-        if self.planning_policy.config['enabled_plans'][
-                'SpawnPlanterPlan']['enabled'] == False:
+        if self.planning_policy.config['enabled_plans']['SpawnPlanterPlan'][
+                'enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
@@ -204,7 +216,9 @@ class SpawnPlanterPlan(RecrtCenterPlan):
             return False
 
         #人口已满
-        if self.planning_policy.game_state['our_player'].planters.__len__() + self.planning_policy.game_state['our_player'].collectors.__len__() >= 10:
+        if self.planning_policy.game_state['our_player'].planters.__len__(
+        ) + self.planning_policy.game_state['our_player'].collectors.__len__(
+        ) >= 10:
             return False
 
         #钱不够
@@ -215,11 +229,14 @@ class SpawnPlanterPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        if self.planning_policy.global_position_mask.get(self.source_agent.position, 0) == 0:
-            self.planning_policy.global_position_mask[self.source_agent.position] = 1
+        if self.planning_policy.global_position_mask.get(
+                self.source_agent.position, 0) == 0:
+            self.planning_policy.global_position_mask[
+                self.source_agent.position] = 1
             return RecrtCenterAction.RECPLANTER
         else:
             return None
+
 
 # 这个Plan是指转化中心招募捕碳者
 class SpawnCollectorPlan(RecrtCenterPlan):
@@ -236,16 +253,18 @@ class SpawnCollectorPlan(RecrtCenterPlan):
             self.preference_index = self.planning_policy.config[
                 'mask_preference_index']
         else:
-            self_planters_count=self.planning_policy.game_state['our_player'].planters.__len__() 
-            self_collectors_count =  self.planning_policy.game_state['our_player'].collectors.__len__() 
+            self_planters_count = self.planning_policy.game_state[
+                'our_player'].planters.__len__()
+            self_collectors_count = self.planning_policy.game_state[
+                'our_player'].collectors.__len__()
             self.preference_index =  (self.planning_policy.config['enabled_plans']['SpawnCollectorPlan']['planter_count_weight'] * self_planters_count \
                 + self.planning_policy.config['enabled_plans']['SpawnCollectorPlan']['collector_count_weight'] * self_collectors_count \
                     + 1) / 1000 + 0.0001
 
     def check_validity(self):
         #没有开启
-        if self.planning_policy.config['enabled_plans'][
-                'SpawnCollectorPlan']['enabled'] == False:
+        if self.planning_policy.config['enabled_plans']['SpawnCollectorPlan'][
+                'enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, RecrtCenter):
@@ -253,7 +272,9 @@ class SpawnCollectorPlan(RecrtCenterPlan):
         if not isinstance(self.target, Cell):
             return False
         #人口已满
-        if self.planning_policy.game_state['our_player'].planters.__len__() + self.planning_policy.game_state['our_player'].collectors.__len__() >= 10:
+        if self.planning_policy.game_state['our_player'].planters.__len__(
+        ) + self.planning_policy.game_state['our_player'].collectors.__len__(
+        ) >= 10:
             return False
         #位置不对
         if self.source_agent.cell != self.target:
@@ -266,11 +287,14 @@ class SpawnCollectorPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        if self.planning_policy.global_position_mask.get(self.source_agent.position, 0) == 0:
-            self.planning_policy.global_position_mask[self.source_agent.position] = 1
+        if self.planning_policy.global_position_mask.get(
+                self.source_agent.position, 0) == 0:
+            self.planning_policy.global_position_mask[
+                self.source_agent.position] = 1
             return RecrtCenterAction.RECCOLLECTOR
         else:
             return None
+
 
 class PlanterPlan(BasePlan):
     def __init__(self, source_agent, target, planning_policy):
@@ -280,59 +304,45 @@ class PlanterPlan(BasePlan):
     def check_valid(self):
         yes_it_is = isinstance(self.source_agent, Planter)
         return yes_it_is
-        
+
     def get_distance2target(self):
         source_position = self.source_agent.position
         target_position = self.target.position
-        distance = self.planning_policy.get_distance(
-            source_position[0], source_position[1], target_position[0],
-            target_position[1])
+        distance = self.planning_policy.get_distance(source_position[0],
+                                                     source_position[1],
+                                                     target_position[0],
+                                                     target_position[1])
         return distance
 
     def get_total_carbon(self, distance=0):
         target_carbon_expect = 0
-        for c in [self.target.up, self.target.left, self.target.right, self.target.down]:
-            target_carbon_expect += get_cell_carbon_after_n_step(self.planning_policy.game_state['board'],
-                                                        c.position,
-                                                        distance + 1)        
+        for c in [
+                self.target.up, self.target.left, self.target.right,
+                self.target.down
+        ]:
+            target_carbon_expect += get_cell_carbon_after_n_step(
+                self.planning_policy.game_state['board'], c.position,
+                distance + 1)
         return target_carbon_expect
 
-    
-    # 根据未来走过去的步数n，计算n步之后目标位置的碳含量
-    # TODO: 这个函数有问题，已经有新的函数了，这个可以删除
-    def get_total_carbon_predicted(self, step_number, carbon_growth_rate):
-        target_sorrounding_cells = [self.target.up, self.target.down, self.target.left, self.target.right]
-        total_carbon = 0
-        for cell in target_sorrounding_cells:
-            cur_list = [cell.up, cell.down, cell.left, cell.right]
-            flag = 0
-            for cur_pos in cur_list:
-                if cur_pos.tree:
-                    flag = 1
-                    break
-            if flag:
-                total_carbon += cell.carbon * (1 + carbon_growth_rate) ** step_number
-            else:
-                total_carbon += cell.carbon
-        return total_carbon
-
-
     def can_action(self, action_position):
-        if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
-            action_cell = self.planning_policy.game_state['board']._cells[action_position]
+        if self.planning_policy.global_position_mask.get(action_position,
+                                                         0) == 0:
+            action_cell = self.planning_policy.game_state['board']._cells[
+                action_position]
             flag = True
 
-            collectors = [action_cell.collector,
-                          action_cell.up.collector, 
-                          action_cell.down.collector,
-                          action_cell.left.collector,
-                          action_cell.right.collector]
+            collectors = [
+                action_cell.collector, action_cell.up.collector,
+                action_cell.down.collector, action_cell.left.collector,
+                action_cell.right.collector
+            ]
 
             for worker in collectors:
                 if worker:
                     if worker.player_id != self.source_agent.player_id:
                         return False
-            
+
             return True
         else:
             return False
@@ -354,30 +364,39 @@ class PlanterPlan(BasePlan):
         shuffle(waiting_list)
         for action in waiting_list:
             new_position = (
-                (Action2Direction[action][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
-                (Action2Direction[action][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+                (Action2Direction[action][0] + old_position[0] +
+                 self.planning_policy.config['row_count']) %
+                self.planning_policy.config['row_count'],
+                (Action2Direction[action][1] + old_position[1] +
+                 self.planning_policy.config['column_count']) %
+                self.planning_policy.config['column_count'],
             )
             if self.can_action(new_position):
                 return action, new_position
         final_ac = waiting_list[randint(0, len(waiting_list) - 1)]
         new_position = (
-                (Action2Direction[final_ac][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
-                (Action2Direction[final_ac][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
-            )
+            (Action2Direction[final_ac][0] + old_position[0] +
+             self.planning_policy.config['row_count']) %
+            self.planning_policy.config['row_count'],
+            (Action2Direction[final_ac][1] + old_position[1] +
+             self.planning_policy.config['column_count']) %
+            self.planning_policy.config['column_count'],
+        )
         return final_ac, new_position
         # return None, old_position
 
-
     def get_nearest_oppo_distance(self):
         my_id = self.source_agent.player_id  # 我方玩家id
-        worker_dict = self.planning_policy.game_state['board'].workers  # 地图所有的 Planter & Collector
+        worker_dict = self.planning_policy.game_state[
+            'board'].workers  # 地图所有的 Planter & Collector
         min_distance = 100000  # 目标单元格附近最近的敌人到该单元格的距离，具体怎么使用待定
         target_position = self.target.position
         for work_id, cur_worker in worker_dict.items():
             if cur_worker.player_id != my_id:  # 敌方worker
                 cur_pos = cur_worker.position
-                cur_dis = self.planning_policy.get_distance(target_position[0], target_position[1],
-                                                            cur_pos[0], cur_pos[1])
+                cur_dis = self.planning_policy.get_distance(
+                    target_position[0], target_position[1], cur_pos[0],
+                    cur_pos[1])
                 if cur_dis < min_distance:
                     min_distance = cur_dis
         return min_distance
@@ -390,9 +409,9 @@ class PlanterPlan(BasePlan):
             if self.can_action(self.target.position):
                 return None, self.target.position
             else:
-                waiting_list = WorkerActions[1:] # 没有None
+                waiting_list = WorkerActions[1:]  # 没有None
                 return self.get_random_direction(waiting_list)
-                
+
         else:
             old_position = self.source_agent.cell.position
             old_distance = self.planning_policy.get_distance(
@@ -404,19 +423,25 @@ class PlanterPlan(BasePlan):
             for i, action in enumerate(WorkerActions):
                 rand_factor = randint(0, 100)
                 if action == None:
-                    move_list.append((None, self.source_agent.cell.position, old_distance, rand_factor))
+                    move_list.append((None, self.source_agent.cell.position,
+                                      old_distance, rand_factor))
                 else:
                     new_position = (
-                        (WorkerDirections[i][0] + old_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
-                        (WorkerDirections[i][1] + old_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+                        (WorkerDirections[i][0] + old_position[0] +
+                         self.planning_policy.config['row_count']) %
+                        self.planning_policy.config['row_count'],
+                        (WorkerDirections[i][1] + old_position[1] +
+                         self.planning_policy.config['column_count']) %
+                        self.planning_policy.config['column_count'],
                     )
                     new_distance = self.planning_policy.get_distance(
-                        new_position[0], new_position[1], self.target.position[0],
-                        self.target.position[1])
-                    
-                    move_list.append((action, new_position, new_distance, rand_factor))
+                        new_position[0], new_position[1],
+                        self.target.position[0], self.target.position[1])
 
-            move_list = sorted(move_list, key=lambda x: x[2: 4])
+                    move_list.append(
+                        (action, new_position, new_distance, rand_factor))
+
+            move_list = sorted(move_list, key=lambda x: x[2:4])
 
             for move, new_position, new_d, _ in move_list:
                 if self.can_action(new_position):
@@ -428,9 +453,9 @@ class PlanterPlan(BasePlan):
         action, position = self.translate_to_action_first()
         if action is None:
             # 钱不够，要动起来，策略是随机动
-            if self.planning_policy.game_state[
-               'our_player'].cash < cash:
-                waiting_list = copy.deepcopy(WorkerActions[1:])  # 重新copy一份 WorkerActions
+            if self.planning_policy.game_state['our_player'].cash < cash:
+                waiting_list = copy.deepcopy(
+                    WorkerActions[1:])  # 重新copy一份 WorkerActions
                 # waiting_list.append(None)  # 两倍的概率继续None
                 action, position = self.get_random_direction(waiting_list)
                 # for i, action in enumerate(waiting_list):
@@ -447,7 +472,6 @@ class PlanterPlan(BasePlan):
                 # self.planning_policy.global_position_mask[position] = 1
         self.planning_policy.global_position_mask[position] = 1
         return action
-
 
     def get_tree_absorb_carbon_speed_at_cell(self, cell: Cell):
         pass
@@ -477,48 +501,53 @@ class PlanterRobTreePlan(PlanterPlan):
             #             'enabled_plans']['PlanterRobTreePlan'][
             #                 'cell_distance_weight']
             total_carbon = self.get_total_carbon(distance2target)
-            cur_json = self.planning_policy.config['enabled_plans']['PlanterRobTreePlan']
+            cur_json = self.planning_policy.config['enabled_plans'][
+                'PlanterRobTreePlan']
             distance_damp_rate = cur_json['distance_damp_rate']
             # total_carbon = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], self.target.position, distance)
             nearest_oppo_planter_distance = self.get_nearest_oppo_distance()
             # print(nearest_oppo_planter_distance)
-            age_can_use = min(50 - self.target.tree.age - distance2target - 1, nearest_oppo_planter_distance)
+            age_can_use = min(50 - self.target.tree.age - distance2target - 1,
+                              nearest_oppo_planter_distance)
             cost = 20
             base = 1000
-            expect_carbon = 2 * sum([total_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
-            self.preference_index = expect_carbon * distance_damp_rate ** distance2target + base - cost
+            expect_carbon = 2 * sum([
+                total_carbon * (0.0375**i) for i in range(1, age_can_use + 1)
+            ])
+            self.preference_index = expect_carbon * distance_damp_rate**distance2target + base - cost
             # print(self.preference_index)
 
     def check_validity(self):
         #没有开启
-        if self.planning_policy.config['enabled_plans'][
-                'PlanterRobTreePlan']['enabled'] == False:
+        if self.planning_policy.config['enabled_plans']['PlanterRobTreePlan'][
+                'enabled'] == False:
             return False
         #类型不对
         if not isinstance(self.source_agent, Planter):
             return False
         if not isinstance(self.target, Cell):
             return False
-        
+
         if self.target.tree is None:
-           return False
+            return False
         if self.target.tree.player_id == self.source_agent.player_id:
             return False
         # if self.target.tree.player_id == self.source_agent.player_id:
         #    return False
-        
+
         return True
 
     def translate_to_action(self):
         return self.translate_to_action_second(20 + 30)
 
 
+# 种树员 种树计划
 class PlanterPlantTreePlan(PlanterPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
         self.planning_policy = planning_policy
-    
+
     def calculate_score(self):
         if self.check_validity() == False:
             self.preference_index = self.planning_policy.config[
@@ -527,7 +556,8 @@ class PlanterPlantTreePlan(PlanterPlan):
             distance2target = self.get_distance2target()
             min_distance = self.get_nearest_oppo_distance()
             # 到这里为止，算出来的 min_distance 是距离敌方worker的最近距离
-            cur_json = self.planning_policy.config['enabled_plans']['PlanterPlantTreePlan']
+            cur_json = self.planning_policy.config['enabled_plans'][
+                'PlanterPlantTreePlan']
             # w0, w1, w2 = cur_json['cell_carbon_weight'], cur_json['cell_distance_weight'], cur_json['enemy_min_distance_weight']
             # 'tree_damp_rate': 0.08,
             # 'distance_damp_rate': 0.999
@@ -547,7 +577,7 @@ class PlanterPlantTreePlan(PlanterPlan):
             tree_damp_rate = cur_json['tree_damp_rate']
             distance_damp_rate = cur_json['distance_damp_rate']
             fuzzy_value = cur_json['fuzzy_value']
-            carbon_growth_rate =cur_json['carbon_growth_rate']
+            carbon_growth_rate = cur_json['carbon_growth_rate']
 
             board = self.planning_policy.game_state['board']
             # total_predict_carbon = get_cell_carbon_after_n_step(board, self.target.position, distance2target)
@@ -557,28 +587,28 @@ class PlanterPlantTreePlan(PlanterPlan):
             age_can_use = min(50 - distance2target - 1, min_distance)
             cost = self.get_actual_plant_cost()
             base = 1000
-            carbon_expectation = 2 * sum([total_predict_carbon * (0.0375 ** i) for i in range(1, age_can_use + 1)])
-            self.preference_index = carbon_expectation * (distance_damp_rate ** distance2target) + base - cost
+            carbon_expectation = 2 * sum([
+                total_predict_carbon * (0.0375**i)
+                for i in range(1, age_can_use + 1)
+            ])
+            self.preference_index = carbon_expectation * (
+                distance_damp_rate**distance2target) + base - cost
 
-                    
     def translate_to_action(self):
-        return self.translate_to_action_second(self.get_actual_plant_cost() + 30)
+        return self.translate_to_action_second(self.get_actual_plant_cost() +
+                                               30)
 
-            
     def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'PlanterPlantTreePlan']['enabled'] == False:
             return False
         if self.target.tree:
             return False
-        
+
         # if self.planning_policy.game_state[
         #        'our_player'].cash < self.get_actual_plant_cost():
         #        return False
         return True
-            
-
-
 
 
 class CollectorPlan(BasePlan):
@@ -590,14 +620,16 @@ class CollectorPlan(BasePlan):
         return yes_it_is
 
     def can_action(self, action_position):
-        if self.planning_policy.global_position_mask.get(action_position, 0) == 0:
-            action_cell = self.planning_policy.game_state['board']._cells[action_position]
+        if self.planning_policy.global_position_mask.get(action_position,
+                                                         0) == 0:
+            action_cell = self.planning_policy.game_state['board']._cells[
+                action_position]
             flag = True
-            collectors = [action_cell.collector,
-                          action_cell.up.collector, 
-                          action_cell.down.collector,
-                          action_cell.left.collector,
-                          action_cell.right.collector]
+            collectors = [
+                action_cell.collector, action_cell.up.collector,
+                action_cell.down.collector, action_cell.left.collector,
+                action_cell.right.collector
+            ]
 
             for collector in collectors:
                 if collector is None:
@@ -617,72 +649,86 @@ class CollectorPlan(BasePlan):
         source_position = self.source_agent.position
         target_position = self.target.position
         source_target_distance = self.planning_policy.get_distance(
-                source_position[0], source_position[1], target_position[0],
-                target_position[1])
+            source_position[0], source_position[1], target_position[0],
+            target_position[1])
 
         potential_action_list = []
 
         for i, action in enumerate(WorkerActions):
             action_position = (
-                (WorkerDirections[i][0] + source_position[0]+ self.planning_policy.config['row_count']) % self.planning_policy.config['row_count'],
-                (WorkerDirections[i][1] + source_position[1]+ self.planning_policy.config['column_count']) % self.planning_policy.config['column_count'],
+                (WorkerDirections[i][0] + source_position[0] +
+                 self.planning_policy.config['row_count']) %
+                self.planning_policy.config['row_count'],
+                (WorkerDirections[i][1] + source_position[1] +
+                 self.planning_policy.config['column_count']) %
+                self.planning_policy.config['column_count'],
             )
             if not self.can_action(action_position):
                 continue
-                        
+
             target_action_distance = self.planning_policy.get_distance(
                 target_position[0], target_position[1], action_position[0],
                 action_position[1])
-            
+
             source_action_distance = self.planning_policy.get_distance(
                 source_position[0], source_position[1], action_position[0],
                 action_position[1])
-            
-            potential_action_list.append((action, 
-                                         action_position,
-                                         target_action_distance + source_action_distance - source_target_distance,
-                                         self.planning_policy.game_state['board']._cells[action_position].carbon))
 
-        potential_action_list = sorted(potential_action_list, key=lambda x: (-x[2], x[3]), reverse=True)
+            potential_action_list.append(
+                (action, action_position, target_action_distance +
+                 source_action_distance - source_target_distance,
+                 self.planning_policy.game_state['board'].
+                 _cells[action_position].carbon))
+
+        potential_action_list = sorted(potential_action_list,
+                                       key=lambda x: (-x[2], x[3]),
+                                       reverse=True)
         if len(potential_action_list) > 0:
             potential_action = potential_action_list[0][0]
             potential_action_position = potential_action_list[0][1]
             if potential_action == None and target_position == action_position:
                 pass
-            elif potential_action == None and len(potential_action_list) > 1 and potential_action_list[1][2] == 0:
+            elif potential_action == None and len(
+                    potential_action_list
+            ) > 1 and potential_action_list[1][2] == 0:
                 potential_action = potential_action_list[1][0]
-                potential_action_position = potential_action_list[1][1]                
+                potential_action_position = potential_action_list[1][1]
 
-        self.planning_policy.global_position_mask[potential_action_position] = 1
-        return  potential_action
+        self.planning_policy.global_position_mask[
+            potential_action_position] = 1
+        return potential_action
 
 
+# 捕碳员 捕碳计划
 class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
-    
+
     def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'CollectorGoToAndCollectCarbonPlan']['enabled'] == False:
             return False
         else:
-        #类型不对
+            #类型不对
             if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
                 return False
             if self.target.tree is not None:
                 return False
-            if self.source_agent.carbon > self.planning_policy.config['collector_config']['gohomethreshold']:
+            if self.source_agent.carbon > self.planning_policy.config[
+                    'collector_config']['gohomethreshold']:
                 return False
-            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            center_position = self.planning_policy.game_state[
+                'our_player'].recrtCenters[0].position
             source_posotion = self.source_agent.position
             source_center_distance = self.planning_policy.get_distance(
                 source_posotion[0], source_posotion[1], center_position[0],
                 center_position[1])
-            if source_center_distance >= 300 - self.planning_policy.game_state['board'].step - 4:
-                return False           
+            if source_center_distance >= 300 - self.planning_policy.game_state[
+                    'board'].step - 4:
+                return False
         return True
 
     def calculate_score(self):
@@ -696,39 +742,44 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
 
-            self.preference_index = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], 
-                                                                self.target.position,
-                                                                distance) / (distance + 1)
-            
-    
+            self.preference_index = get_cell_carbon_after_n_step(
+                self.planning_policy.game_state['board'], self.target.position,
+                distance) / (distance + 1)
+
     def translate_to_action(self):
         return super().translate_to_action()
 
+
+# 捕碳员 回家+捕碳计划
 class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
-    
+
     def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
-                'CollectorGoToAndGoHomeWithCollectCarbonPlan']['enabled'] == False:
+                'CollectorGoToAndGoHomeWithCollectCarbonPlan'][
+                    'enabled'] == False:
             return False
         else:
-        #类型不对
+            #类型不对
             if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
                 return False
             if self.target.tree is not None:
                 return False
-            if self.source_agent.carbon <= self.planning_policy.config['collector_config']['gohomethreshold']:
+            if self.source_agent.carbon <= self.planning_policy.config[
+                    'collector_config']['gohomethreshold']:
                 return False
-            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            center_position = self.planning_policy.game_state[
+                'our_player'].recrtCenters[0].position
             source_posotion = self.source_agent.position
             source_center_distance = self.planning_policy.get_distance(
                 source_posotion[0], source_posotion[1], center_position[0],
                 center_position[1])
-            if source_center_distance >= 300 - self.planning_policy.game_state['board'].step - 4:
+            if source_center_distance >= 300 - self.planning_policy.game_state[
+                    'board'].step - 4:
                 return False
         return True
 
@@ -740,65 +791,71 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
             source_posotion = self.source_agent.position
             target_position = self.target.position
 
-            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            center_position = self.planning_policy.game_state[
+                'our_player'].recrtCenters[0].position
             target_center_distance = self.planning_policy.get_distance(
                 center_position[0], center_position[1], target_position[0],
                 target_position[1])
-            
+
             source_target_distance = self.planning_policy.get_distance(
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
-            
+
             source_center_distance = self.planning_policy.get_distance(
                 source_posotion[0], source_posotion[1], target_position[0],
                 target_position[1])
 
             if target_center_distance + source_target_distance == source_center_distance:
-                self.preference_index = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], 
-                                                                    self.target.position,
-                                                                    source_target_distance) / (source_target_distance + 1) + 100
+                self.preference_index = get_cell_carbon_after_n_step(
+                    self.planning_policy.game_state['board'],
+                    self.target.position, source_target_distance) / (
+                        source_target_distance + 1) + 100
             else:
-                self.preference_index = get_cell_carbon_after_n_step(self.planning_policy.game_state['board'], 
-                                                                    self.target.position,
-                                                                    source_target_distance) / (source_target_distance + 1) - 100
+                self.preference_index = get_cell_carbon_after_n_step(
+                    self.planning_policy.game_state['board'],
+                    self.target.position, source_target_distance) / (
+                        source_target_distance + 1) - 100
 
     def translate_to_action(self):
-        return super().translate_to_action() 
+        return super().translate_to_action()
 
+
+# 捕碳员 回家计划
 class CollectorGoToAndGoHomePlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
-    
+
     def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'CollectorGoToAndGoHomePlan']['enabled'] == False:
             return False
         else:
-        #类型不对
+            #类型不对
             if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
                 return False
             if self.target.tree is not None:
                 return False
-            if self.source_agent.carbon <= self.planning_policy.config['collector_config']['gohomethreshold']:
+            if self.source_agent.carbon <= self.planning_policy.config[
+                    'collector_config']['gohomethreshold']:
                 return False
 
             # 与转化中心距离大于1
-            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            center_position = self.planning_policy.game_state[
+                'our_player'].recrtCenters[0].position
             source_position = self.source_agent.position
             if self.planning_policy.get_distance(
-                source_position[0], source_position[1], center_position[0],
-                center_position[1]) > 1:
+                    source_position[0], source_position[1], center_position[0],
+                    center_position[1]) > 1:
                 return False
             # target 不是转化中心
             target_position = self.target.position
-            if target_position[0] != center_position[0] or target_position[1] != center_position[1]:
+            if target_position[0] != center_position[0] or target_position[
+                    1] != center_position[1]:
                 return False
 
-            
-            
         return True
 
     def calculate_score(self):
@@ -810,27 +867,30 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
 
     def translate_to_action(self):
         if not self.can_action(self.target.position):
-            self.planning_policy.global_position_mask[self.source_agent.position] = 1
+            self.planning_policy.global_position_mask[
+                self.source_agent.position] = 1
             return None
         else:
             self.planning_policy.global_position_mask[self.target.position] = 1
         for move in WorkerAction.moves():
             new_position = self.source_agent.cell.position + move.to_point()
-            if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
-                return move 
+            if new_position[0] == self.target.position[0] and new_position[
+                    1] == self.target.position[1]:
+                return move
 
 
+# 捕碳员 游戏终期回家计划
 class CollectorRushHomePlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
-    
+
     def check_validity(self):
         if self.planning_policy.config['enabled_plans'][
                 'CollectorRushHomePlan']['enabled'] == False:
             return False
         else:
-        #类型不对
+            #类型不对
             if not isinstance(self.source_agent, Collector):
                 return False
             if not isinstance(self.target, Cell):
@@ -838,7 +898,8 @@ class CollectorRushHomePlan(CollectorPlan):
             if self.target.tree is not None:
                 return False
 
-            center_position = self.planning_policy.game_state['our_player'].recrtCenters[0].position
+            center_position = self.planning_policy.game_state[
+                'our_player'].recrtCenters[0].position
             source_posotion = self.source_agent.position
             source_center_distance = self.planning_policy.get_distance(
                 source_posotion[0], source_posotion[1], center_position[0],
@@ -850,9 +911,10 @@ class CollectorRushHomePlan(CollectorPlan):
             if self.source_agent.carbon <= 10:
                 return False
 
-            if source_center_distance < 300 - self.planning_policy.game_state['board'].step - 5:
+            if source_center_distance < 300 - self.planning_policy.game_state[
+                    'board'].step - 5:
                 return False
-            
+
         return True
 
     def calculate_score(self):
@@ -863,7 +925,8 @@ class CollectorRushHomePlan(CollectorPlan):
             self.preference_index = 5000
 
     def translate_to_action(self):
-        return super().translate_to_action() 
+        return super().translate_to_action()
+
 
 class PlanningPolicy(BasePolicy):
     '''
@@ -886,8 +949,8 @@ class PlanningPolicy(BasePolicy):
                 # 以下plan同理
                 'SpawnPlanterPlan': {
                     'enabled': True,
-                    'planter_count_weight':-8,
-                    'collector_count_weight':2,
+                    'planter_count_weight': -8,
+                    'collector_count_weight': 2,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
@@ -895,8 +958,8 @@ class PlanningPolicy(BasePolicy):
                 # 基地 招募捕碳员计划
                 'SpawnCollectorPlan': {
                     'enabled': True,
-                    'planter_count_weight':8,
-                    'collector_count_weight':-2,
+                    'planter_count_weight': 8,
+                    'collector_count_weight': -2,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
@@ -961,13 +1024,12 @@ class PlanningPolicy(BasePolicy):
     #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
     #mod self.config['column_count]
     def get_distance(self, x1, y1, x2, y2):
-        x_1_to_2= (x1 - x2 +
-                self.config['row_count']) % self.config['row_count'] 
-        y_1_to_2= (
-                    y1 - y2 +
+        x_1_to_2 = (x1 - x2 +
+                    self.config['row_count']) % self.config['row_count']
+        y_1_to_2 = (y1 - y2 +
                     self.config['column_count']) % self.config['column_count']
-        dis_x = min(self.config['row_count'] - x_1_to_2 , x_1_to_2)
-        dis_y = min(self.config['column_count'] - y_1_to_2 , y_1_to_2)
+        dis_x = min(self.config['row_count'] - x_1_to_2, x_1_to_2)
+        dis_y = min(self.config['column_count'] - y_1_to_2, y_1_to_2)
         return dis_x + dis_y
 
     @staticmethod
@@ -1005,25 +1067,20 @@ class PlanningPolicy(BasePolicy):
                 plan = (CollectorGoToAndGoHomeWithCollectCarbonPlan(
                     collector, cell, self))
                 plans.append(plan)
-                plan = (CollectorGoToAndGoHomePlan(
-                    collector, cell, self))
+                plan = (CollectorGoToAndGoHomePlan(collector, cell, self))
                 plans.append(plan)
 
-                plan = (CollectorRushHomePlan(
-                    collector, cell, self))
+                plan = (CollectorRushHomePlan(collector, cell, self))
                 plans.append(plan)
 
             for planter in self.game_state['our_player'].planters:
-                plan = (PlanterRobTreePlan(
-                    planter, cell, self))
+                plan = (PlanterRobTreePlan(planter, cell, self))
 
                 plans.append(plan)
-                plan = (PlanterPlantTreePlan(
-                    planter, cell, self))
+                plan = (PlanterPlantTreePlan(planter, cell, self))
                 plans.append(plan)
 
             for recrtCenter in self.game_state['our_player'].recrtCenters:
-                #TODO:动态地load所有的recrtCenterPlan类
                 plan = SpawnPlanterPlan(recrtCenter, cell, self)
                 plans.append(plan)
                 plan = SpawnCollectorPlan(recrtCenter, cell, self)
@@ -1032,7 +1089,8 @@ class PlanningPolicy(BasePolicy):
         pass
         plans = [
             plan for plan in plans
-            if plan.preference_index != self.config['mask_preference_index'] and plan.preference_index > 0
+            if plan.preference_index != self.config['mask_preference_index']
+            and plan.preference_index >= 0
         ]
         return plans
 
@@ -1048,33 +1106,39 @@ class PlanningPolicy(BasePolicy):
 
     #从合法的Plan中为每一个Agent选择一个最优的Plan
     def possible_plans_to_plans(self, possible_plans: BasePlan):
-        #TODO:解决plan之间的冲突,比如2个种树者要去同一个地方种树，现在的plan选择
-        #方式是不解决冲突
         source_agent_id_plan_dict = {}
-        possible_plans = sorted(possible_plans, key=lambda x: x.preference_index, reverse=True)
-        
+        possible_plans = sorted(possible_plans,
+                                key=lambda x: x.preference_index,
+                                reverse=True)
+
         collector_cell_plan = dict()
         planter_cell_plan = dict()
-        
+
         # 去转化中心都不冲突x
-        center_position = self.game_state['our_player'].recrtCenters[0].position
+        center_position = self.game_state['our_player'].recrtCenters[
+            0].position
         collector_cell_plan[center_position] = -100
 
         for possible_plan in possible_plans:
             if possible_plan.source_agent.id in source_agent_id_plan_dict:
                 continue
             if isinstance(possible_plan.source_agent, Collector):
-                if collector_cell_plan.get(possible_plan.target.position, 0) > 0:
+                if collector_cell_plan.get(possible_plan.target.position,
+                                           0) > 0:
                     continue
-                collector_cell_plan[possible_plan.target.position] = collector_cell_plan.get(possible_plan.target.position, 1)
+                collector_cell_plan[
+                    possible_plan.target.position] = collector_cell_plan.get(
+                        possible_plan.target.position, 1)
                 source_agent_id_plan_dict[
-                    possible_plan.source_agent.id] = possible_plan    
+                    possible_plan.source_agent.id] = possible_plan
             elif isinstance(possible_plan.source_agent, Planter):
                 if planter_cell_plan.get(possible_plan.target.position, 0) > 0:
                     continue
-                planter_cell_plan[possible_plan.target.position] = planter_cell_plan.get(possible_plan.target.position, 1)
+                planter_cell_plan[
+                    possible_plan.target.position] = planter_cell_plan.get(
+                        possible_plan.target.position, 1)
                 source_agent_id_plan_dict[
-                    possible_plan.source_agent.id] = possible_plan             
+                    possible_plan.source_agent.id] = possible_plan
             else:
                 source_agent_id_plan_dict[
                     possible_plan.source_agent.id] = possible_plan
@@ -1088,22 +1152,27 @@ class PlanningPolicy(BasePolicy):
         carbon_contain_dict = dict()  # 用来存储地图上每一个位置周围4个位置当前的碳含量, {(0, 0): 32}
         for _loc, cell in map_carbon_cell.items():
 
-            valid_loc = [(_loc[0], _loc[1] - 1),
-                        (_loc[0] - 1, _loc[1]),
-                        (_loc[0] + 1, _loc[1]),
-                        (_loc[0], _loc[1] + 1)]  # 四个位置，按行遍历时从小到大
+            valid_loc = [(_loc[0], _loc[1] - 1), (_loc[0] - 1, _loc[1]),
+                         (_loc[0] + 1, _loc[1]),
+                         (_loc[0], _loc[1] + 1)]  # 四个位置，按行遍历时从小到大
 
-            forced_pos_valid_loc = str(valid_loc).replace('-1', '14')  # 因为棋盘大小是 15 * 15
-            forced_pos_valid_loc = eval(forced_pos_valid_loc.replace('15', '0'))
+            forced_pos_valid_loc = str(valid_loc).replace(
+                '-1', '14')  # 因为棋盘大小是 15 * 15
+            forced_pos_valid_loc = eval(forced_pos_valid_loc.replace(
+                '15', '0'))
 
             filter_cell = \
                 [_c for _, _c in map_carbon_cell.items() if getattr(_c, "position", (-100, -100)) in forced_pos_valid_loc]
 
             assert len(filter_cell) == 4  # 因为选取周围四个值来吸收碳
 
-            carbon_contain_dict[cell] = sum([_fc.carbon for _fc in filter_cell])
+            carbon_contain_dict[cell] = sum(
+                [_fc.carbon for _fc in filter_cell])
 
-        map_carbon_sum_sorted = dict(sorted(carbon_contain_dict.items(), key=lambda x: x[1], reverse=True))
+        map_carbon_sum_sorted = dict(
+            sorted(carbon_contain_dict.items(),
+                   key=lambda x: x[1],
+                   reverse=True))
 
         return map_carbon_sum_sorted
 
@@ -1111,7 +1180,7 @@ class PlanningPolicy(BasePolicy):
     #所有规则为这个函数所调用
     def take_action(self, observation, configuration):
         self.global_position_mask = dict()
-                            
+
         self.parse_observation(observation, configuration)
         possible_plans = self.make_possible_plans()
         plans = self.possible_plans_to_plans(possible_plans)
