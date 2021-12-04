@@ -15,7 +15,17 @@ from zerosum_env import make, evaluate
 from zerosum_env.envs.carbon.helpers import *
 from planning_policy import PlanningPolicy
 
+
 def carbon2map(carbon: List) -> List:
+    '''
+    将一维碳含量数组转化为二维碳含量数组并返回
+    #TODO:这个函数在哪里调用，貌似board里的carbon就能直接用
+
+    Args:
+        一维数组carbon,其中其中map[i][j]=carbon[i*15+j]
+    Returns:
+        一个二维数组map, map[i][j]表示地图上[i][j]这个点的碳含量
+    '''
     map = []
     for x in range(15):
         for y in range(15):
@@ -23,8 +33,11 @@ def carbon2map(carbon: List) -> List:
                 map.append([])
             map[x].append(carbon[y + x * 15])
     return map
-        
+
 def get_surrounded_cells(board: Board, cur_cell: Cell) -> List[Cell]:
+    '''
+    获取一个Cell周围的4个Cell的List
+    '''
     cell_list = []
     point = cur_cell.position
     cell_list.append(board.cells[Point(point.x - 1 if point.x > 0 else 14, point.y)])
@@ -33,7 +46,11 @@ def get_surrounded_cells(board: Board, cur_cell: Cell) -> List[Cell]:
     cell_list.append(board.cells[Point(point.x, point.y + 1 if point.y < 14 else 0)])
     return cell_list
     
+
 def move(board: Board, cur_cell: Cell, direction: WorkerAction, step: int) -> Cell:
+    '''
+    根据WorkerAction获取cur_cell下一步的Cell
+    '''
     point = cur_cell.position
     if direction == WorkerAction.UP:
         return board.cells[Point(point.x, point.y - step if point.y - step >= 0 else point.y - step + 15)]
@@ -46,10 +63,18 @@ def move(board: Board, cur_cell: Cell, direction: WorkerAction, step: int) -> Ce
     else:
         return cur_cell
 
+
 def get_distance(cell1: Cell, cell2: Cell) -> int:
+    '''
+    #TODO:这个函数大概有严重Bug
+    '''
     return math.abs(cell1.position.x, cell2.position.x) + math.abs(cell1.position.y, cell2.position.y)
 
+
 def get_nearest_enemy(cur_cell: Cell, enemy_list: List[Cell]) -> Cell:
+    '''
+    #TODO:调用了上述有Bug的get_distance函数，不要使用
+    '''
     if len(enemy_list) == 0:
         return None
     max_dis = 50
@@ -64,7 +89,11 @@ def get_nearest_enemy(cur_cell: Cell, enemy_list: List[Cell]) -> Cell:
 def build_vitual_map():
     pass
 
+
 def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float:
+    '''
+    #TODO: 跟planning_policy里的函数重复了
+    '''
     # 危险区域中如果有树会对position造成影响
     danger_zone = []
     x_left = position.x - 1 if position.x > 0 else 14
@@ -110,8 +139,11 @@ def get_cell_carbon_after_n_step(board: Board, position: Point, n: int) -> float
         c = min(c, 100)
     return c  
 
-def get_distance_map(board: Board) -> Dict[(Tuple, Tuple), int]:
 
+def get_distance_map(board: Board) -> Dict[(Tuple, Tuple), int]:
+    '''
+    获取Board中任意两点之间的距离的字典
+    '''
     # 初始化参数
     # 一个极大值
     INF = int(1e9)
@@ -190,10 +222,11 @@ def get_distance_map(board: Board) -> Dict[(Tuple, Tuple), int]:
 
     return ans
 
+if __name__ == '__main__':
 
 
-policy=PlanningPolicy()
-logs = []
-env = make("carbon", configuration={"randomSeed":1}, logs=logs)
-env.reset()
+    policy=PlanningPolicy()
+    logs = []
+    env = make("carbon", configuration={"randomSeed":1}, logs=logs)
+    env.reset()
 
