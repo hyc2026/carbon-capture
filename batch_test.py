@@ -2,16 +2,21 @@ import sys
 import easydict
 sys.path.append("game")
 import torch
+import time
 import random
 from easydict import EasyDict 
 from zerosum_env import make, evaluate
 from zerosum_env.envs.carbon.helpers import *
 
-from algorithms.planning_policy.planning_policy import PlanningPolicy
-from algorithms.jiaqi_policy.my_policy import MyPolicy
 
-policy_class_list = [PlanningPolicy, MyPolicy]
-expriment_repeat = 5
+
+
+from algorithms.planning_policy.planning_policy import PlanningPolicy
+from algorithms.planning_policy.wb_planning_policy import PlanningPolicy as WbPolicy
+from algorithms.jiaqi_policy.my_policy_2 import MyPolicy as JiaqiPolicy
+from algorithms.planning_policy.planning_policy_jds import PlanningPolicyJDS as JdsPolicy
+
+
 
 def run_experiment(policy_class_A,policy_class_B):
     policy_A = policy_class_A()
@@ -49,30 +54,34 @@ def run_experiment(policy_class_A,policy_class_B):
     
     result.A_relative_win=result.A_win_B_error+result.A_normal_win -result.B_win_A_error-result.B_normal_win
     result.experiment_count=1
-    
-    print(f"{policy_A.__class__} VS {policy_B.__class__}")
-    print(result)
+    return result
     
 
 def run_experiments(policy_class_A,policy_class_B,experiment_count:int):
+    # set random seed by time
+    random.seed(time.time())
     total_result=None
     for i in range(experiment_count):
+        print(f"running epoch {i+1}/{experiment_count}")
         single_experiment_result=run_experiment(policy_class_A,policy_class_B)
         if total_result is None:
             total_result=single_experiment_result
         else:
             for key in total_result.keys():
-                total_result[key]=single_experiment_result[key]
+                total_result[key]+=single_experiment_result[key]
     return total_result
 
+
+
 def main():
-    random.seed(0)
+    policy_class_list = [PlanningPolicy, JiaqiPolicy,WbPolicy,JdsPolicy]
+    all_policy_class_total_results=[]
     for policy_class_A in policy_class_list:
         for policy_class_B in policy_class_list:
             if policy_class_A is policy_class_B: continue
-            for i in range(expriment_repeat):
-                run_experiment(policy_class_A,policy_class_B)
-            
+            total_result=run_experiments(policy_class_A,policy_class_B,10)
+    all_policy_class_total_results.append((policy_class_A,policy_class_B,total_result))
+    print(all_policy_class_total_results)
 
 if __name__ == "__main__":
     main()

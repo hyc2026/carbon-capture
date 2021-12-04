@@ -1,0 +1,48 @@
+{
+  "enabled_plans": {
+    "SpawnPlanterPlan": {
+      "enabled": true,
+      "planter_count_weight": 16,
+      "collector_count_weight": 2
+    },
+    "SpawnCollectorPlan": {
+      "enabled": true,
+      "planter_count_weight": 8,
+      "collector_count_weight": -2
+    },
+    "PlanterRobTreePlan": {
+      "enabled": true,
+      "cell_carbon_weight": 1,
+      "cell_distance_weight": -7,
+      "distance_damp_rate": 0.999
+    },
+    "PlanterPlantTreePlan": {
+      "enabled": true,
+      "cell_carbon_weight": 50,
+      "cell_distance_weight": -40,
+      "enemy_min_distance_weight": 50,
+      "tree_damp_rate": 0.08,
+      "distance_damp_rate": 0.999,
+      "fuzzy_value": 2,
+      "carbon_growth_rate": 0.05
+    },
+    "CollectorGoToAndCollectCarbonPlan": {
+      "enabled": true
+    },
+    "CollectorGoToAndGoHomeWithCollectCarbonPlan": {
+      "enabled": true
+    },
+    "CollectorGoToAndGoHomePlan": {
+      "enabled": true
+    },
+    "CollectorRushHomePlan": {
+      "enabled": true
+    }
+  },
+  "collector_config": {
+    "gohomethreshold": 100
+  },
+  "row_count": 15,
+  "column_count": 15,
+  "mask_preference_index": -1000000000.0
+}

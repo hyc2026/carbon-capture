@@ -7,6 +7,7 @@ sys.path.append('../..')
 import copy
 from abc import ABC, abstractmethod
 from typing import Dict, Tuple
+from easydict import EasyDict as edict,EasyDict
 
 from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              Point, RecrtCenter, Worker,
@@ -41,7 +42,7 @@ Action2Direction = {
     WorkerAction.LEFT: np.array((-1, 0))
 }
 
-
+#这个函数的使用了很多常数，但这些常数不用写在PlanningPolicy中，因为这些常数不会变化
 def get_cell_carbon_after_n_step(board: Board, position: Point,
                                  n: int) -> float:
     # 计算position这个位置的碳含量在n步之后的预估数值
@@ -175,7 +176,7 @@ class BasePlan(ABC):
                                                      target_position[0],
                                                      target_position[1])
         return distance
-        
+
     #根据Plan生成Action
     @abstractmethod
     def translate_to_action(self):
@@ -315,8 +316,8 @@ class PlanterPlan(BasePlan):
     def check_valid(self):
         yes_it_is = isinstance(self.source_agent, Planter)
         return yes_it_is
-
-
+    
+    #获取target cell在distance+1个step之后的4个round cell的carbon之和
     def get_total_carbon(self, distance=0):
         target_carbon_expect = 0
         for c in [
@@ -583,10 +584,8 @@ class PlanterPlantTreePlan(PlanterPlan):
             carbon_growth_rate = cur_json['carbon_growth_rate']
 
             board = self.planning_policy.game_state['board']
-            # total_predict_carbon = get_cell_carbon_after_n_step(board, self.target.position, distance2target)
+            #total_predict_carbon是走到target的时候，target四周的carbon之和
             total_predict_carbon = self.get_total_carbon(distance2target)
-            # carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target) * (min_distance - distance2target) * fuzzy_value
-            # carbon_expectation = total_predict_carbon * (distance_damp_rate ** distance2target)
             age_can_use = min(50 - distance2target - 1, min_distance)
             cost = self.get_actual_plant_cost()
             base = 1000
@@ -944,7 +943,7 @@ class PlanningPolicy(BasePolicy):
     def __init__(self):
         super().__init__()
         #这里是策略的晁灿
-        self.config = {
+        self.config = EasyDict({
             # 表示我们的策略库中有多少可使用的策略
             'enabled_plans': {
                 # 基地 招募种树员计划
@@ -1013,16 +1012,16 @@ class PlanningPolicy(BasePolicy):
             'column_count': 15,
             # 把执行不了的策略的score设成该值（-inf）
             'mask_preference_index': -1e9
-        }
+        })
         #存储游戏中的状态，配置
-        self.game_state = {
+        self.game_state = EasyDict({
             'board': None,
             'observation': None,
             'configuration': None,
             'our_player': None,  #carbon.helpers.Player class from board field
             'opponent_player':
             None  #carbon.helpers.Player class from board field
-        }
+        })
 
     #get Chebyshev distance of two positions, x mod self.config['row_count] ,y
     #mod self.config['column_count]
