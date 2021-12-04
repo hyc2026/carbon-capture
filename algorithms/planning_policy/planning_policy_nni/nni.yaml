@@ -1,0 +1,16 @@
+authorName: default
+experimentName: PlanningPolicy
+trialConcurrency: 4
+maxExecDuration: 1h
+maxTrialNum: 10
+trainingServicePlatform: local
+# 搜索空间文件路径
+searchSpacePath: /home/ubuntu/syncthing/workspace/project/carbon_baseline_cuda/algorithms/planning_policy/planning_policy_nni/configs/search_space.json
+useAnnotation: false
+tuner:
+  builtinTunerName: TPE
+# 运行的命令，以及 Trial 代码的路径
+trial:
+  command: python algorithms/planning_policy/planning_policy_nni/planning_policy_auto_test_make_best_parameter.py
+  codeDir: /home/ubuntu/syncthing/workspace/project/carbon_baseline_cuda
+  gpuNum: 0
