@@ -17,144 +17,157 @@
       -1000000000.0
     ]
   },
-  "enabled_plans|SpawnPlanterPlan|enabled": {
+  "enabled_plans.SpawnPlanterPlan.enabled": {
     "_type": "choice",
     "_value": [
       true
     ]
   },
-  "enabled_plans|SpawnPlanterPlan|collector_count_weight": {
+  "enabled_plans.SpawnCollectorPlan.enabled": {
     "_type": "choice",
     "_value": [
+      true
+    ]
+  },
+  "enabled_plans.PlanterRobTreePlan.enabled": {
+    "_type": "choice",
+    "_value": [
+      true
+    ]
+  },
+  "enabled_plans.PlanterPlantTreePlan.enabled": {
+    "_type": "choice",
+    "_value": [
+      true
+    ]
+  },
+  "enabled_plans.CollectorGoToAndCollectCarbonPlan.enabled": {
+    "_type": "choice",
+    "_value": [
+      true
+    ]
+  },
+  "enabled_plans.CollectorGoToAndGoHomeWithCollectCarbonPlan.enabled": {
+    "_type": "choice",
+    "_value": [
+      true
+    ]
+  },
+  "enabled_plans.CollectorGoToAndGoHomePlan.enabled": {
+    "_type": "choice",
+    "_value": [
+      true
+    ]
+  },
+  "enabled_plans.CollectorRushHomePlan.enabled": {
+    "_type": "choice",
+    "_value": [
+      true
+    ]
+  },
+  "enabled_plans.SpawnPlanterPlan.planter_count_weight": {
+    "_type": "uniform",
+    "_value": [
+      -32,
+      -8
+    ]
+  },
+  "enabled_plans.SpawnPlanterPlan.collector_count_weight": {
+    "_type": "uniform",
+    "_value": [
+      -4,
+      -1
+    ]
+  },
+  "enabled_plans.SpawnCollectorPlan.planter_count_weight": {
+    "_type": "uniform",
+    "_value": [
+      -16,
+      -4
+    ]
+  },
+  "enabled_plans.SpawnCollectorPlan.collector_count_weight": {
+    "_type": "uniform",
+    "_value": [
+      -4,
+      -1
+    ]
+  },
+  "enabled_plans.PlanterRobTreePlan.cell_carbon_weight": {
+    "_type": "uniform",
+    "_value": [
+      0.5,
       2
     ]
   },
-  "enabled_plans|SpawnCollectorPlan|enabled": {
-    "_type": "choice",
+  "enabled_plans.PlanterRobTreePlan.cell_distance_weight": {
+    "_type": "uniform",
     "_value": [
-      true
+      3.5,
+      14
     ]
   },
-  "enabled_plans|SpawnCollectorPlan|planter_count_weight": {
-    "_type": "choice",
+  "enabled_plans.PlanterRobTreePlan.distance_damp_rate": {
+    "_type": "uniform",
     "_value": [
-      8
+      0.5,
+      1.998
     ]
   },
-  "enabled_plans|SpawnCollectorPlan|collector_count_weight": {
-    "_type": "choice",
+  "enabled_plans.PlanterPlantTreePlan.cell_carbon_weight": {
+    "_type": "uniform",
     "_value": [
-      -2
-    ]
-  },
-  "enabled_plans|PlanterRobTreePlan|enabled": {
-    "_type": "choice",
-    "_value": [
-      true
-    ]
-  },
-  "enabled_plans|PlanterRobTreePlan|cell_carbon_weight": {
-    "_type": "choice",
-    "_value": [
-      1
-    ]
-  },
-  "enabled_plans|PlanterRobTreePlan|cell_distance_weight": {
-    "_type": "choice",
-    "_value": [
-      -7
-    ]
-  },
-  "enabled_plans|PlanterRobTreePlan|distance_damp_rate": {
-    "_type": "choice",
-    "_value": [
-      0.999
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|enabled": {
-    "_type": "choice",
-    "_value": [
-      true
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|cell_carbon_weight": {
-    "_type": "choice",
-    "_value": [
-      50
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|cell_distance_weight": {
-    "_type": "choice",
-    "_value": [
-      -40
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|enemy_min_distance_weight": {
-    "_type": "choice",
-    "_value": [
-      50
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|tree_damp_rate": {
-    "_type": "choice",
-    "_value": [
-      0.08
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|distance_damp_rate": {
-    "_type": "choice",
-    "_value": [
-      0.999
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|fuzzy_value": {
-    "_type": "choice",
-    "_value": [
-      2
-    ]
-  },
-  "enabled_plans|PlanterPlantTreePlan|carbon_growth_rate": {
-    "_type": "choice",
-    "_value": [
-      0.05
-    ]
-  },
-  "enabled_plans|CollectorGoToAndCollectCarbonPlan|enabled": {
-    "_type": "choice",
-    "_value": [
-      true
-    ]
-  },
-  "enabled_plans|CollectorGoToAndGoHomeWithCollectCarbonPlan|enabled": {
-    "_type": "choice",
-    "_value": [
-      true
-    ]
-  },
-  "enabled_plans|CollectorGoToAndGoHomePlan|enabled": {
-    "_type": "choice",
-    "_value": [
-      true
-    ]
-  },
-  "enabled_plans|CollectorRushHomePlan|enabled": {
-    "_type": "choice",
-    "_value": [
-      true
-    ]
-  },
-  "collector_config|gohomethreshold": {
-    "_type": "choice",
-    "_value": [
+      25,
       100
     ]
   },
-  "enabled_plans|SpawnPlanterPlan|planter_count_weight": {
-    "_type": "choice",
+  "enabled_plans.PlanterPlantTreePlan.cell_distance_weight": {
+    "_type": "uniform",
     "_value": [
-      -16,
-      -8,
-      -4
+      -64,
+      -16
+    ]
+  },
+  "enabled_plans.PlanterPlantTreePlan.enemy_min_distance_weight": {
+    "_type": "uniform",
+    "_value": [
+      25,
+      100
+    ]
+  },
+  "enabled_plans.PlanterPlantTreePlan.tree_damp_rate": {
+    "_type": "uniform",
+    "_value": [
+      0.04,
+      0.16
+    ]
+  },
+  "enabled_plans.PlanterPlantTreePlan.distance_damp_rate": {
+    "_type": "uniform",
+    "_value": [
+      0.498,
+      1.998
+    ]
+  },
+  "enabled_plans.PlanterPlantTreePlan.fuzzy_value": {
+    "_type": "uniform",
+    "_value": [
+      1,
+      4
+    ]
+  },
+  "enabled_plans.PlanterPlantTreePlan.carbon_growth_rate": {
+    "_type": "uniform",
+    "_value": [
+      0.025,
+      0.1
+    ]
+  },
+  "collector_config.gohomethreshold": {
+    "_type": "uniform",
+    "_value": [
+      50,
+      100
     ]
   }
 }

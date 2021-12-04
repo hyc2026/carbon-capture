@@ -2,7 +2,7 @@
   "enabled_plans": {
     "SpawnPlanterPlan": {
       "enabled": true,
-      "planter_count_weight": {"_type":"choice", "_value": [-16,-8,-4]},
+      "planter_count_weight": 16,
       "collector_count_weight": 2
     },
     "SpawnCollectorPlan": {
