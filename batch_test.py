@@ -49,9 +49,7 @@ def run_experiment(policy_class_A,policy_class_B):
     
     result.A_relative_win=result.A_win_B_error+result.A_normal_win -result.B_win_A_error-result.B_normal_win
     result.experiment_count=1
-    
-    print(f"{policy_A.__class__} VS {policy_B.__class__}")
-    print(result)
+    return result
     
 
 def run_experiments(policy_class_A,policy_class_B,experiment_count:int):
@@ -62,7 +60,10 @@ def run_experiments(policy_class_A,policy_class_B,experiment_count:int):
             total_result=single_experiment_result
         else:
             for key in total_result.keys():
-                total_result[key]=single_experiment_result[key]
+                total_result[key]+=single_experiment_result[key]
+        
+        print(f"{policy_A.__class__} VS {policy_B.__class__}")
+        print(f"{total_result}")
     return total_result
 
 def main():
