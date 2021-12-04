@@ -1204,6 +1204,9 @@ class CollectorDefensePlan(CollectorPlan):
             if src_tgt_dis > 2:
                 return False
             
+            if self.board.step > 290:
+                return False
+            
             worker = self.target.worker
             if not worker:
                 return False
@@ -1592,8 +1595,7 @@ class PlanningPolicy(BasePolicy):
 
         attacker = self.set_attacker(ours)
 
-
-        if ours.cash < 60 and len(ours.workers) < 4:
+        if ours.cash < 60 and len(ours.workers) < 4 and self.board.step < 20:
             self.attacker = None
             attacker = None
 
@@ -1605,9 +1607,6 @@ class PlanningPolicy(BasePolicy):
 
         # print('plans')
         # print(plans)
-        """
-        dict_values([<algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a353880>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a341520>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a3748e0>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a341c10>])
-        """
 
         # 标记敌方 collector 的周围 cell, 至于敌方的planter就不管了
         for col in oppo[0].collectors:
