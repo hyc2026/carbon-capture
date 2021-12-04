@@ -151,11 +151,6 @@ class CollectorAct(AgentBase):
             # 不能去敌方基地，危险
             if next_pos == self.oppo_base.position and collector.carbon == 0:
                 continue
-            # 如果该位置敌方捕碳员的碳比我少也不能去
-            worker = self.board[next_pos].worker
-            if worker:
-                if worker.is_collector and worker.player_id == self.oppo[0].id and worker.carbon < collector.carbon:
-                    continue
             safe_moves.append(move)
         return safe_moves
 
@@ -1160,7 +1155,7 @@ class CollectorRushHomePlan(CollectorPlan):
             if self.source_agent.carbon <= 10:
                 return False
             # 离得太远也算了
-            if source_center_distance < 300 - self.board.step - 10:
+            if source_center_distance < 300 - self.board.step - 5:
                 return False
         return True
 
@@ -1662,3 +1657,15 @@ class PlanningPolicy(BasePolicy):
         """
 
         return command_list
+
+
+
+
+
+my_policy = PlanningPolicy()
+
+
+def agent(obs, configuration):
+    global my_policy
+    commands = my_policy.take_action(obs, configuration)
+    return commands
