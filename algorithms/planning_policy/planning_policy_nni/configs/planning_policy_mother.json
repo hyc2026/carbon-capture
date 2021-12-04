@@ -5,15 +5,15 @@
       "planter_count_weight": {
         "_type": "uniform",
         "_value": [
-          -32,
+          -24,
           -8
         ]
       }, //16
       "collector_count_weight": {
         "_type": "uniform",
         "_value": [
-          -4,
-          -1
+          -1.5,
+          -0.5
         ]
       } //1
     },
@@ -22,14 +22,14 @@
       "planter_count_weight": {
         "_type": "uniform",
         "_value": [
-          -16,
+          -12,
           -4
         ]
       }, //8,
       "collector_count_weight": {
         "_type": "uniform",
         "_value": [
-          -4,
+          -3,
           -1
         ]
       } //-2
@@ -40,21 +40,21 @@
         "_type": "uniform",
         "_value": [
           0.5,
-          2
+          1.5
         ]
       }, //1,
       "cell_distance_weight": {
         "_type": "uniform",
         "_value": [
-          3.5,
-          14
+          -10.5,
+          -3.5
         ]
       }, //-7,
       "distance_damp_rate": {
         "_type": "uniform",
         "_value": [
-          0.5,
-          1.998
+          0.498,
+          1.497
         ]
       } //0.999
     },
@@ -64,13 +64,13 @@
         "_type": "uniform",
         "_value": [
           25,
-          100
+          75
         ]
       }, //50,
       "cell_distance_weight": {
         "_type": "uniform",
         "_value": [
-          -64,
+          -48,
           -16
         ]
       }, //-32
@@ -78,35 +78,35 @@
         "_type": "uniform",
         "_value": [
           25,
-          100
+          75
         ]
       }, //50,
       "tree_damp_rate": {
         "_type": "uniform",
         "_value": [
           0.04,
-          0.16
+          0.12
         ]
       }, //0.08,
       "distance_damp_rate": {
         "_type": "uniform",
         "_value": [
           0.498,
-          1.998
+          1.497
         ]
       }, //0.999,
       "fuzzy_value": {
         "_type": "uniform",
         "_value": [
           1,
-          4
+          3
         ]
       }, //2
       "carbon_growth_rate": {
         "_type": "uniform",
         "_value": [
           0.025,
-          0.1
+          0.075
         ]
       } //0.05
     },
@@ -128,7 +128,7 @@
       "_type": "uniform",
       "_value": [
         50,
-        100
+        150
       ]
     } //100
   },
