@@ -7,11 +7,17 @@ from easydict import EasyDict
 from zerosum_env import make, evaluate
 from zerosum_env.envs.carbon.helpers import *
 
-from algorithms.planning_policy.planning_policy import PlanningPolicy
-from algorithms.jiaqi_policy.my_policy import MyPolicy
 
-policy_class_list = [PlanningPolicy, MyPolicy]
+
+
+from algorithms.planning_policy.planning_policy import PlanningPolicy
+from algorithms.planning_policy.wb_planning_policy import PlanningPolicy as WbPolicy
+from algorithms.jiaqi_policy.my_policy_2 import MyPolicy as JiaqiPolicy
+from algorithms.planning_policy.planning_policy_jds import PlanningPolicyJDS as JdsPolicy
+
+
 expriment_repeat = 5
+policy_class_list = [PlanningPolicy, JiaqiPolicy,WbPolicy,JdsPolicy]
 
 def run_experiment(policy_class_A,policy_class_B):
     policy_A = policy_class_A()
@@ -52,7 +58,7 @@ def run_experiment(policy_class_A,policy_class_B):
     return result
     
 
-def run_experiments(policy_class_A,policy_class_B,experiment_count:int):
+def run_experiments(policy_class_A,policy_class_B,experiment_count:int=expriment_repeat):
     total_result=None
     for i in range(experiment_count):
         single_experiment_result=run_experiment(policy_class_A,policy_class_B)
@@ -61,18 +67,21 @@ def run_experiments(policy_class_A,policy_class_B,experiment_count:int):
         else:
             for key in total_result.keys():
                 total_result[key]+=single_experiment_result[key]
-        
-        print(f"{policy_A.__class__} VS {policy_B.__class__}")
-        print(f"{total_result}")
     return total_result
+
+
 
 def main():
     random.seed(0)
+    all_policy_class_total_results=[]
     for policy_class_A in policy_class_list:
         for policy_class_B in policy_class_list:
             if policy_class_A is policy_class_B: continue
             for i in range(expriment_repeat):
-                run_experiment(policy_class_A,policy_class_B)
+                total_result=run_experiments(policy_class_A,policy_class_B)
+    all_policy_class_total_results.append((policy_class_A,policy_class_B,total_result))
+    print(all_policy_class_total_results)
+
             
 
 if __name__ == "__main__":
