@@ -1003,8 +1003,8 @@ class CollectorGetCarbonPlan(CollectorPlan):
             if self.source_agent.carbon > self.config['collector_config']['gohomethreshold']:
                 return False
             center_position = self.our_player.recrtCenters[0].position
-            source_posotion = self.source_agent.position
-            source_center_distance = get_distance(source_posotion, center_position)
+            source_position = self.source_agent.position
+            source_center_distance = get_distance(source_position, center_position)
             # 留出足够的回家步数
             if source_center_distance >= 300 - self.board.step - 4:
                 return False
@@ -1014,9 +1014,9 @@ class CollectorGetCarbonPlan(CollectorPlan):
         if self.check_validity() == False:
             self.preference_index = self.config['mask_preference_index']
         else:
-            source_posotion = self.source_agent.position
+            source_position = self.source_agent.position
             target_position = self.target.position
-            distance = get_distance(source_posotion, target_position)
+            distance = get_distance(source_position, target_position)
 
             self.preference_index = get_cell_carbon_after_n_step(self.board, self.target.position, distance) / (distance + 1)
 
@@ -1044,8 +1044,8 @@ class CollectorGoHomeGetCarbonPlan(CollectorPlan):
             if self.source_agent.carbon <= self.config['collector_config']['gohomethreshold']:
                 return False
             center_position = self.our_player.recrtCenters[0].position
-            source_posotion = self.source_agent.position
-            source_center_distance = get_distance(source_posotion, center_position)
+            source_position = self.source_agent.position
+            source_center_distance = get_distance(source_position, center_position)
             # 留出足够的回家步数
             if source_center_distance >= 300 - self.board.step - 4:
                 return False
@@ -1055,15 +1055,15 @@ class CollectorGoHomeGetCarbonPlan(CollectorPlan):
         if self.check_validity() == False:
             self.preference_index = self.config['mask_preference_index']
         else:
-            source_posotion = self.source_agent.position
+            source_position = self.source_agent.position
             target_position = self.target.position
 
             center_position = self.our_player.recrtCenters[0].position
             target_center_distance = get_distance(center_position, target_position)
 
-            source_target_distance = get_distance(source_posotion, target_position)
+            source_target_distance = get_distance(source_position, target_position)
 
-            source_center_distance = get_distance(source_posotion, target_position)
+            source_center_distance = get_distance(source_position, target_position)
 
             if target_center_distance + source_target_distance == source_center_distance:
                 # 偏好走直线
@@ -1146,8 +1146,8 @@ class CollectorRushHomePlan(CollectorPlan):
                 return False
 
             center_position = self.our_player.recrtCenters[0].position
-            source_posotion = self.source_agent.position
-            source_center_distance = get_distance(source_posotion, center_position)
+            source_position = self.source_agent.position
+            source_center_distance = get_distance(source_position, center_position)
 
             if self.target.position != center_position:
                 return False
@@ -1183,31 +1183,76 @@ class CollectorDefensePlan(CollectorPlan):
                 return False
             if not isinstance(self.target, Cell):
                 return False
-            if self.target.tree is not None:
-                return False
-
+            
             center_position = self.our_player.recrtCenters[0].position
-            source_posotion = self.source_agent.position
-            source_center_distance = get_distance(source_posotion, center_position)
+            src_position = self.source_agent.position
+            tgt_position = self.target.position
+            
+            src_center_distance = get_distance(src_position, center_position)
+            src_tgt_dis = get_distance(src_position, tgt_position)
 
-            if self.target.position != center_position:
+            #必须是在家附近
+            if src_center_distance > 2:
                 return False
-            # 碳很少也没必要回来
-            if self.source_agent.carbon <= 10:
+            
+            # 距离目标位置 d <= 2, 且目标位置有敌方种树员，或者碳多的捕碳员
+            if src_tgt_dis > 2:
                 return False
-            # 离得太远也算了
-            if source_center_distance < 300 - self.board.step - 5:
+            
+            worker = self.target.worker
+            if not worker:
                 return False
-        return True
+            
+            our_player_id = self.our_player.id
+            if worker.player_id == our_player_id:
+                return False
+            
+            if worker.is_planter or (worker.is_collector and worker.carbon > self.source_agent.carbon):
+                return True
+                        
+            return False
 
     def calculate_score(self):
         if self.check_validity() == False:
             self.preference_index = self.config['mask_preference_index']
         else:
-            self.preference_index = 5000
+            self.preference_index = 8000
 
     def translate_to_action(self):
-        return super().translate_to_action()
+        src_position = self.source_agent.position
+        tgt_position = self.target.position
+        center_position = self.our_player.recrtCenters[0].position
+        old_distance = get_distance(src_position, tgt_position)
+
+        move_candidates = []
+        for action in WorkerAction.moves():
+            next_position = get_moved_position(src_position, action)
+            if not self.can_action(next_position):
+                continue
+            
+            new_dis = get_distance(next_position, tgt_position)
+            if new_dis < old_distance:
+                move_candidates.append(action)
+        
+        next_position = src_position
+        best_move = None
+        min_home_dis = 1000000
+        if len(move_candidates) == 1:
+            best_move = move_candidates[0]
+            next_position = get_moved_position(src_position, best_move)
+        elif len(move_candidates) > 1:
+            for move in move_candidates:
+                t_position = get_moved_position(src_position, move)
+                new_home_dis = get_distance(center_position, t_position)
+                if new_home_dis < min_home_dis:
+                    min_home_dis = new_home_dis
+                    best_move = move
+                    next_position = t_position
+        
+        self.collector_danger_zone[next_position] = 1
+        return best_move
+
+
 
 def set_danger_zone(danger_zone_dict, positions):
     if isinstance(positions, List):
@@ -1254,8 +1299,8 @@ class PlanningPolicy(BasePolicy):
                 # 以下plan同理
                 'SpawnPlanterPlan': {
                     'enabled': True,
-                    'planter_count_weight': -8,
-                    'collector_count_weight': 2,
+                    'planter_count_weight': -7,
+                    'collector_count_weight': 3,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
@@ -1263,8 +1308,8 @@ class PlanningPolicy(BasePolicy):
                 # 基地 招募捕碳员计划
                 'SpawnCollectorPlan': {
                     'enabled': True,
-                    'planter_count_weight': 8,
-                    'collector_count_weight': -2,
+                    'planter_count_weight': 7,
+                    'collector_count_weight': -3,
                     # 'cash_weight':2,
                     # 'constant_weight':,
                     # 'denominator_weight':
@@ -1378,6 +1423,9 @@ class PlanningPolicy(BasePolicy):
                 plans.append(plan)
 
                 plan = (CollectorRushHomePlan(collector, cell, self))
+                plans.append(plan)
+
+                plan = (CollectorDefensePlan(collector, cell, self))
                 plans.append(plan)
 
             # for planter in self.game_state['our_player'].planters:
