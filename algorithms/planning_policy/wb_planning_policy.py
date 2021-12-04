@@ -18,30 +18,12 @@ TREE_PLANTED_LIMIT = 10  # 在场树的数量大于该值，则停止种树
 
 assert PREEMPT_BONUS > PROTECT_BONUS  # 抢优先级大于保护
 
-BaseActions = [None,
-               RecrtCenterAction.RECCOLLECTOR,
-               RecrtCenterAction.RECPLANTER]
+BaseActions = [None, RecrtCenterAction.RECCOLLECTOR, RecrtCenterAction.RECPLANTER]
 
-WorkerActions = [None,
-                 WorkerAction.UP,
-                 WorkerAction.RIGHT,
-                 WorkerAction.DOWN,
-                 WorkerAction.LEFT]
+WorkerActions = [None, WorkerAction.UP, WorkerAction.RIGHT, WorkerAction.DOWN, WorkerAction.LEFT]
 
-WorkerDirections = np.stack([np.array((0, 0)),
-                             np.array((0, 1)),
-                             np.array((1, 0)),
-                             np.array((0, -1)),
-                             np.array((-1, 0))])  # 与WorkerActions相对应
 
-Action2Direction = {None: np.array((0, 0)),
-                    WorkerAction.UP: np.array((0, 1)),
-                    WorkerAction.RIGHT: np.array((1, 0)),
-                    WorkerAction.DOWN: np.array((0, -1)),
-                    WorkerAction.LEFT: np.array((-1, 0))
-                    }
-
-danger_zone: Dict[Point, int] = {}  # 保存危险区域，或者已被占领区域，每个回合更新一下
+danger_zone: Dict[Point, int] = {}  # 保存种树员的危险区域，不能走，或者已被占领区域，每个回合更新一下
 
 def get_distance(p1: Point, p2: Point) -> int:
     x1, y1 = p1[0], p1[1]
@@ -69,7 +51,6 @@ class AgentBase:
 def get_sorrounding_carbons(cell: Cell):
     """ return the carbon of up, down, left, and right of given cell
     """
-
     sum_carbon = 0
     sum_carbon += cell.up.carbon
     sum_carbon += cell.down.carbon
@@ -352,8 +333,7 @@ class PlanterAct(AgentBase):
                         target_preference_score = 1000000
                 else:
                     if is_enough_tree:  # 是我方的树，并且我方树的总数量>M，那就开始保护我方的树
-                        target_preference_score = np.log(
-                            1 / (planter_to_cell_distance + 1e-9)) + PROTECT_BONUS
+                        target_preference_score = np.log(1 / (planter_to_cell_distance + 1e-9)) + PROTECT_BONUS
                     else:
                         continue
 
@@ -945,16 +925,13 @@ class CollectorPlan(BasePlan):
         yes_it_is = isinstance(self.source_agent, Collector)
         return yes_it_is
 
-    def can_action(self, action_position):
-        if action_position not in self.collector_danger_zone:
-            action_cell = self.board.cells[action_position]
-            collectors = [action_cell.collector,
-                          action_cell.up.collector,
-                          action_cell.down.collector,
-                          action_cell.left.collector,
-                          action_cell.right.collector]
+    # 判断下一步是否安全，如果安全，那么捕碳员就会多待一会儿
+    def can_action(self, next_position):
+        if next_position not in self.collector_danger_zone:
+            action_cell = self.board.cells[next_position]
+            collectors = [action_cell.collector, action_cell.up.collector, action_cell.down.collector, action_cell.left.collector, action_cell.right.collector]
 
-            for collector in collectors:
+            for collector in collectors:  # 所有捕碳员都适用这套规则
                 if collector is None:
                     continue
                 if collector.player_id == self.source_agent.player_id:
@@ -966,8 +943,9 @@ class CollectorPlan(BasePlan):
             return False
 
     def translate_to_action(self):
-        potential_action = None
-        potential_action_position = self.source_agent.position
+        next_action = None
+        next_position = self.source_agent.position
+        
         source_position = self.source_agent.position
         target_position = self.target.position
         source_target_distance = get_distance(source_position, target_position)
@@ -985,36 +963,34 @@ class CollectorPlan(BasePlan):
             target_action_distance = get_distance(target_position, action_position)
             source_action_distance = get_distance(source_position, action_position)
 
-            potential_action_list.append((action,
-                                         action_position,
-                                         target_action_distance + source_action_distance - source_target_distance,
-                                         self.board.cells[action_position].carbon))
+            # 新的距离-旧的距离
+            delta_dis = target_action_distance + source_action_distance - source_target_distance
 
-        potential_action_list = sorted(
-            potential_action_list, key=lambda x: (-x[2], x[3]), reverse=True)
+            potential_action_list.append((action, action_position, delta_dis, self.board.cells[action_position].carbon))
+
+        potential_action_list = sorted(potential_action_list, key=lambda x: (-x[2], x[3]), reverse=True)
         
         # TODO: 这种存数组，然后还是二维的，最后再弄个序号取值简直太 confusing 了，得优化
         if len(potential_action_list) > 0:  # 如果多个方向都ok，那么选一个
-            potential_action = potential_action_list[0][0]
-            potential_action_position = potential_action_list[0][1]
-            if potential_action == None and target_position == action_position:
+            next_action = potential_action_list[0][0]
+            next_position = potential_action_list[0][1]
+            if next_action == None and target_position == next_position:
                 pass
-            elif potential_action == None and len(potential_action_list) > 1 and potential_action_list[1][2] == 0:
-                potential_action = potential_action_list[1][0]
-                potential_action_position = potential_action_list[1][1]
+            elif next_action == None and len(potential_action_list) > 1 and potential_action_list[1][2] == 0:
+                next_action = potential_action_list[1][0]
+                next_position = potential_action_list[1][1]
 
-        self.collector_danger_zone[potential_action_position] = 1
-        return potential_action
+        self.collector_danger_zone[next_position] = 1
+        return next_action
 
 
-class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
+class CollectorGetCarbonPlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
 
     def check_validity(self):
-        if self.config['enabled_plans'][
-                'CollectorGoToAndCollectCarbonPlan']['enabled'] == False:
+        if self.config['enabled_plans']['CollectorGetCarbonPlan']['enabled'] == False:
             return False
         else:
             # 类型不对
@@ -1029,14 +1005,14 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
             center_position = self.our_player.recrtCenters[0].position
             source_posotion = self.source_agent.position
             source_center_distance = get_distance(source_posotion, center_position)
+            # 留出足够的回家步数
             if source_center_distance >= 300 - self.board.step - 4:
                 return False
         return True
 
     def calculate_score(self):
         if self.check_validity() == False:
-            self.preference_index = self.config[
-                'mask_preference_index']
+            self.preference_index = self.config['mask_preference_index']
         else:
             source_posotion = self.source_agent.position
             target_position = self.target.position
@@ -1048,14 +1024,13 @@ class CollectorGoToAndCollectCarbonPlan(CollectorPlan):
         return super().translate_to_action()
 
 
-class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
+class CollectorGoHomeGetCarbonPlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
 
     def check_validity(self):
-        if self.config['enabled_plans'][
-                'CollectorGoToAndGoHomeWithCollectCarbonPlan']['enabled'] == False:
+        if self.config['enabled_plans']['CollectorGoHomeGetCarbonPlan']['enabled'] == False:
             return False
         else:
             # 类型不对
@@ -1065,19 +1040,20 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
                 return False
             if self.target.tree is not None:
                 return False
+            # 未达到捕碳阈值不许回家
             if self.source_agent.carbon <= self.config['collector_config']['gohomethreshold']:
                 return False
             center_position = self.our_player.recrtCenters[0].position
             source_posotion = self.source_agent.position
             source_center_distance = get_distance(source_posotion, center_position)
+            # 留出足够的回家步数
             if source_center_distance >= 300 - self.board.step - 4:
                 return False
         return True
 
     def calculate_score(self):
         if self.check_validity() == False:
-            self.preference_index = self.config[
-                'mask_preference_index']
+            self.preference_index = self.config['mask_preference_index']
         else:
             source_posotion = self.source_agent.position
             target_position = self.target.position
@@ -1090,6 +1066,7 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
             source_center_distance = get_distance(source_posotion, target_position)
 
             if target_center_distance + source_target_distance == source_center_distance:
+                # 偏好走直线
                 self.preference_index = \
                     get_cell_carbon_after_n_step(self.board, self.target.position, source_target_distance) / (source_target_distance + 1) + 100
             else:
@@ -1100,14 +1077,13 @@ class CollectorGoToAndGoHomeWithCollectCarbonPlan(CollectorPlan):
         return super().translate_to_action()
 
 
-class CollectorGoToAndGoHomePlan(CollectorPlan):
+class CollectorOneStepHomePlan(CollectorPlan):
     def __init__(self, source_agent, target, planning_policy):
         super().__init__(source_agent, target, planning_policy)
         self.calculate_score()
 
     def check_validity(self):
-        if self.config['enabled_plans'][
-                'CollectorGoToAndGoHomePlan']['enabled'] == False:
+        if self.config['enabled_plans']['CollectorOneStepHomePlan']['enabled'] == False:
             return False
         else:
             # 类型不对
@@ -1117,25 +1093,26 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
                 return False
             if self.target.tree is not None:
                 return False
+            # 未达到捕碳阈值不许回家
             if self.source_agent.carbon <= self.config['collector_config']['gohomethreshold']:
                 return False
 
             # 与转化中心距离大于1
             center_position = self.our_player.recrtCenters[0].position
             source_position = self.source_agent.position
+            # 距离大于一，不执行
             if get_distance(source_position, center_position) > 1:
                 return False
             # target 不是转化中心
             target_position = self.target.position
-            if target_position[0] != center_position[0] or target_position[1] != center_position[1]:
+            if target_position != center_position:
                 return False
 
         return True
 
     def calculate_score(self):
         if self.check_validity() == False:
-            self.preference_index = self.config[
-                'mask_preference_index']
+            self.preference_index = self.config['mask_preference_index']
         else:
             self.preference_index = 10000
 
@@ -1146,8 +1123,8 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
         else:
             self.collector_danger_zone[self.target.position] = 1
         for move in WorkerAction.moves():
-            new_position = self.source_agent.cell.position + move.to_point()
-            if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
+            new_position = get_moved_position(self.source_agent.cell.position, move)
+            if new_position == self.target.position:
                 return move
 
 
@@ -1157,8 +1134,7 @@ class CollectorRushHomePlan(CollectorPlan):
         self.calculate_score()
 
     def check_validity(self):
-        if self.config['enabled_plans'][
-                'CollectorRushHomePlan']['enabled'] == False:
+        if self.config['enabled_plans']['CollectorRushHomePlan']['enabled'] == False:
             return False
         else:
             # 类型不对
@@ -1173,21 +1149,60 @@ class CollectorRushHomePlan(CollectorPlan):
             source_posotion = self.source_agent.position
             source_center_distance = get_distance(source_posotion, center_position)
 
-            if self.target.position[0] != center_position[0] or \
-                    self.target.position[1] != center_position[1]:
+            if self.target.position != center_position:
                 return False
+            # 碳很少也没必要回来
             if self.source_agent.carbon <= 10:
                 return False
-
+            # 离得太远也算了
             if source_center_distance < 300 - self.board.step - 5:
                 return False
-
         return True
 
     def calculate_score(self):
         if self.check_validity() == False:
-            self.preference_index = self.config[
-                'mask_preference_index']
+            self.preference_index = self.config['mask_preference_index']
+        else:
+            self.preference_index = 5000
+
+    def translate_to_action(self):
+        return super().translate_to_action()
+
+
+class CollectorDefensePlan(CollectorPlan):
+    def __init__(self, source_agent, target, planning_policy):
+        super().__init__(source_agent, target, planning_policy)
+        self.calculate_score()
+
+    def check_validity(self):
+        if self.config['enabled_plans']['CollectorDefensePlan']['enabled'] == False:
+            return False
+        else:
+            # 类型不对
+            if not isinstance(self.source_agent, Collector):
+                return False
+            if not isinstance(self.target, Cell):
+                return False
+            if self.target.tree is not None:
+                return False
+
+            center_position = self.our_player.recrtCenters[0].position
+            source_posotion = self.source_agent.position
+            source_center_distance = get_distance(source_posotion, center_position)
+
+            if self.target.position != center_position:
+                return False
+            # 碳很少也没必要回来
+            if self.source_agent.carbon <= 10:
+                return False
+            # 离得太远也算了
+            if source_center_distance < 300 - self.board.step - 5:
+                return False
+        return True
+
+    def calculate_score(self):
+        if self.check_validity() == False:
+            self.preference_index = self.config['mask_preference_index']
         else:
             self.preference_index = 5000
 
@@ -1273,19 +1288,23 @@ class PlanningPolicy(BasePolicy):
                 },
                 # Collector plans
                 # 捕碳者去全地图score最高的地方采集碳的策略
-                'CollectorGoToAndCollectCarbonPlan': {
+                'CollectorGetCarbonPlan': {
                     'enabled': True
                 },
                 # 捕碳者碳携带的数量超过阈值后，打算回家，并且顺路去score高的地方采集碳
-                'CollectorGoToAndGoHomeWithCollectCarbonPlan': {
+                'CollectorGoHomeGetCarbonPlan': {
                     'enabled': True
                 },
                 # 捕碳者碳携带的数量超过阈值并且与家距离为1，那么就直接回家
-                'CollectorGoToAndGoHomePlan': {
+                'CollectorOneStepHomePlan': {
                     'enabled': True
                 },
                 # 捕碳者根据与家的距离和剩余回合数，判断是否应该立刻冲回家送碳
                 'CollectorRushHomePlan': {
+                    'enabled': True
+                },
+                # 捕碳员在家附近防守
+                'CollectorDefensePlan': {
                     'enabled': True
                 }
             },
@@ -1349,18 +1368,16 @@ class PlanningPolicy(BasePolicy):
                 if self.attacker and self.attacker.id == collector.id:
                     continue
 
-                plan = (CollectorGoToAndCollectCarbonPlan(
-                    collector, cell, self))
+                plan = (CollectorGetCarbonPlan(collector, cell, self))
                 plans.append(plan)
-                plan = (CollectorGoToAndGoHomeWithCollectCarbonPlan(
-                    collector, cell, self))
+                
+                plan = (CollectorGoHomeGetCarbonPlan(collector, cell, self))
                 plans.append(plan)
-                plan = (CollectorGoToAndGoHomePlan(
-                    collector, cell, self))
+                
+                plan = (CollectorOneStepHomePlan(collector, cell, self))
                 plans.append(plan)
 
-                plan = (CollectorRushHomePlan(
-                    collector, cell, self))
+                plan = (CollectorRushHomePlan(collector, cell, self))
                 plans.append(plan)
 
             # for planter in self.game_state['our_player'].planters:
@@ -1509,6 +1526,8 @@ class PlanningPolicy(BasePolicy):
         
         ours, oppo = self.board.current_player, self.board.opponents
 
+        # print(f'################ player id: {ours.id}')
+
         if self.board.step > 280:
             self.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight'] = -9
             self.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight'] = 1
@@ -1534,10 +1553,10 @@ class PlanningPolicy(BasePolicy):
         # print('plans')
         # print(plans)
         """
-        dict_values([<algorithms.planning_policy.wb_planning_policy.CollectorGoToAndCollectCarbonPlan object at 0x7f9f9a353880>, <algorithms.planning_policy.wb_planning_policy.CollectorGoToAndCollectCarbonPlan object at 0x7f9f9a341520>, <algorithms.planning_policy.wb_planning_policy.CollectorGoToAndCollectCarbonPlan object at 0x7f9f9a3748e0>, <algorithms.planning_policy.wb_planning_policy.CollectorGoToAndCollectCarbonPlan object at 0x7f9f9a341c10>])
+        dict_values([<algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a353880>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a341520>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a3748e0>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a341c10>])
         """
 
-        # 标记敌方 collector 的周围 cell, planter 不怕它
+        # 标记敌方 collector 的周围 cell, 至于敌方的planter就不管了
         for col in oppo[0].collectors:
             cell_pos_list = [col.position] + get_cross_positions(col.cell)
             set_danger_zone(danger_zone, cell_pos_list)
