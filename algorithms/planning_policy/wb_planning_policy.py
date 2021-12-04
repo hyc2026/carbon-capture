@@ -169,52 +169,15 @@ class CollectorAct(AgentBase):
     def _target_plan(self, collector: Collector, ours_info, oppo_info) -> Optional[Cell]:
         return 1
 
-    def _check_surround_validity(self, move: WorkerAction, collector: Collector) -> bool:
-        move = move.name
-        our_player_id = collector.player_id
-        if move == 'UP':
-            # 需要看前方三个位置有没有Agent
-            next_step_cell = collector.cell.up
-            check_cell_list = [next_step_cell, next_step_cell.up,
-                               next_step_cell.left, next_step_cell.right]
-        elif move == 'DOWN':
-            next_step_cell = collector.cell.down
-            check_cell_list = [next_step_cell, next_step_cell.down,
-                               next_step_cell.left, next_step_cell.right]
-        elif move == 'RIGHT':
-            next_step_cell = collector.cell.right
-            check_cell_list = [
-                next_step_cell, next_step_cell.right, next_step_cell.up, next_step_cell.down]
-        elif move == 'LEFT':
-            next_step_cell = collector.cell.left
-            check_cell_list = [next_step_cell, next_step_cell.left,
-                               next_step_cell.up, next_step_cell.down]
-        else:
-            raise NotImplementedError
-
-        safe_places = []
-        for cell in check_cell_list:
-            cworker = cell.worker
-            if cworker:
-                this_player_id = cworker.player_id
-                if this_player_id == our_player_id:
-                    safe_places.append(False)
-            else:
-                safe_places.append(True)
-
-        res = all(safe_places)
-        return res
 
     def get_safe_moves(self, collector: Collector):
         safe_moves = []
         for move in WorkerAction.moves():
             next_pos = get_moved_position(collector.position, move)
             # 不能去敌方基地，危险
-            if next_pos == self.oppo_base.position:
+            if next_pos == self.oppo_base.position and collector.carbon == 0:
                 continue
             safe_moves.append(move)
-            # if self._check_surround_validity(move, collector):
-            # safe_moves.append(move)
         return safe_moves
 
     def get_near_enermy_cell(self, collector: Collector):
@@ -231,6 +194,8 @@ class CollectorAct(AgentBase):
         best_cell = None
         best_move_name = None
         for cell, move_name in check_cells:
+            if cell.position == self.oppo_base.position and collector.carbon == 0:  # 不能去敌方基地
+                continue
             worker = cell.worker
             if worker and worker.is_collector:
                 worker_id = worker.player_id
@@ -239,8 +204,6 @@ class CollectorAct(AgentBase):
                         max_carbon = worker.carbon
                         best_cell = cell
                         best_move_name = move_name
-        if best_cell.position == self.oppo_base.position:
-            return None, None
         if best_move_name:
             return best_cell, best_move_name
         return None, None
@@ -292,8 +255,7 @@ class CollectorAct(AgentBase):
             old_distance = get_distance(old_position, target_position)
             move_name_list = []
             for move in safe_moves:
-                new_position = old_position.translate(
-                    move.to_point(), AREA_SIZE)
+                new_position = get_moved_position(old_position, move)
                 new_distance = get_distance(new_position, target_position)
                 if new_distance < old_distance:
                     move_name_list.append(move.name)
@@ -816,7 +778,7 @@ class BasePlan(ABC):
         self.config = self.planning_policy.config
         self.board: Board = self.planning_policy.game_state['board']
         self.env_config = self.planning_policy.game_state['configuration']
-        self.global_position_mask = self.planning_policy.global_position_mask
+        self.collector_danger_zone = self.planning_policy.collector_danger_zone
         self.our_player: Player = self.planning_policy.game_state['our_player']
         self.planters_count = len(self.our_player.planters)
         self.collectors_count = len(self.our_player.collectors)
@@ -888,8 +850,8 @@ class SpawnPlanterPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        if self.source_agent.position not in self.global_position_mask:
-            self.global_position_mask[self.source_agent.position] = 1
+        if self.source_agent.position not in self.collector_danger_zone:
+            self.collector_danger_zone[self.source_agent.position] = 1
             return RecrtCenterAction.RECPLANTER
         else:
             return None
@@ -953,8 +915,8 @@ class SpawnCollectorPlan(RecrtCenterPlan):
         return True
 
     def translate_to_action(self):
-        if self.source_agent.position not in self.global_position_mask:
-            self.global_position_mask[self.source_agent.position] = 1
+        if self.source_agent.position not in self.collector_danger_zone:
+            self.collector_danger_zone[self.source_agent.position] = 1
             return RecrtCenterAction.RECCOLLECTOR
         else:
             return None
@@ -969,9 +931,8 @@ class CollectorPlan(BasePlan):
         return yes_it_is
 
     def can_action(self, action_position):
-        if action_position not in self.global_position_mask:
-            action_cell = self.board._cells[action_position]
-            flag = True
+        if action_position not in self.collector_danger_zone:
+            action_cell = self.board.cells[action_position]
             collectors = [action_cell.collector,
                           action_cell.up.collector,
                           action_cell.down.collector,
@@ -983,7 +944,7 @@ class CollectorPlan(BasePlan):
                     continue
                 if collector.player_id == self.source_agent.player_id:
                     continue
-                if collector.carbon <= self.source_agent.carbon:
+                if collector.carbon <= self.source_agent.carbon:  # 敌方捕碳员碳比我们的少，躲开它
                     return False
             return True
         else:
@@ -992,35 +953,33 @@ class CollectorPlan(BasePlan):
     def translate_to_action(self):
         potential_action = None
         potential_action_position = self.source_agent.position
-        potential_carbon = -1
         source_position = self.source_agent.position
         target_position = self.target.position
         source_target_distance = get_distance(source_position, target_position)
 
         potential_action_list = []
 
-        for i, action in enumerate(WorkerActions):
-            action_position = (
-                (WorkerDirections[i][0] + source_position[0] +
-                 self.config['row_count']) % self.config['row_count'],
-                (WorkerDirections[i][1] + source_position[1] +
-                 self.config['column_count']) % self.config['column_count'],
-            )
+        for action in [None] + WorkerAction.moves():
+            action_position = source_position
+            if action:
+                action_position = get_moved_position(source_position, action)
+            
             if not self.can_action(action_position):
                 continue
 
             target_action_distance = get_distance(target_position, action_position)
-
             source_action_distance = get_distance(source_position, action_position)
 
             potential_action_list.append((action,
                                          action_position,
                                          target_action_distance + source_action_distance - source_target_distance,
-                                         self.board._cells[action_position].carbon))
+                                         self.board.cells[action_position].carbon))
 
         potential_action_list = sorted(
             potential_action_list, key=lambda x: (-x[2], x[3]), reverse=True)
-        if len(potential_action_list) > 0:
+        
+        # TODO: 这种存数组，然后还是二维的，最后再弄个序号取值简直太 confusing 了，得优化
+        if len(potential_action_list) > 0:  # 如果多个方向都ok，那么选一个
             potential_action = potential_action_list[0][0]
             potential_action_position = potential_action_list[0][1]
             if potential_action == None and target_position == action_position:
@@ -1029,7 +988,7 @@ class CollectorPlan(BasePlan):
                 potential_action = potential_action_list[1][0]
                 potential_action_position = potential_action_list[1][1]
 
-        self.global_position_mask[potential_action_position] = 1
+        self.collector_danger_zone[potential_action_position] = 1
         return potential_action
 
 
@@ -1167,10 +1126,10 @@ class CollectorGoToAndGoHomePlan(CollectorPlan):
 
     def translate_to_action(self):
         if not self.can_action(self.target.position):
-            self.global_position_mask[self.source_agent.position] = 1
+            self.collector_danger_zone[self.source_agent.position] = 1
             return None
         else:
-            self.global_position_mask[self.target.position] = 1
+            self.collector_danger_zone[self.target.position] = 1
         for move in WorkerAction.moves():
             new_position = self.source_agent.cell.position + move.to_point()
             if new_position[0] == self.target.position[0] and new_position[1] == self.target.position[1]:
@@ -1527,7 +1486,7 @@ class PlanningPolicy(BasePolicy):
     # 所有规则为这个函数所调用
     def take_action(self, observation, configuration):
         # mask = 1 的位置不能再走了
-        self.global_position_mask: Dict[Point, int] = {}
+        self.collector_danger_zone: Dict[Point, int] = {}
 
         self.parse_observation(observation, configuration)
         cur_board: Board = self.game_state['board']
