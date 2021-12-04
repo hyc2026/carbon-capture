@@ -85,20 +85,14 @@ def calculate_carbon_contain(map_carbon_cell: Dict, ours_info: Player, planter_t
     oppo_base_position = cur_board.opponents[0].recrtCenters[0].position
 
     # 排除这些cell
-    excluded_positions = [our_base_position]
+    excluded_positions = [our_base_position, oppo_base_position]
     # 有树，及其周围（九宫格内都不行） TODO: 这边可以做一个改变，九宫格内或许可以有树
     for _, tree in cur_board.trees.items():
-        excluded_positions.extend([tree.position, tree.cell.up.position, tree.cell.down.position, tree.cell.left.position, tree.cell.right.position,
-                                  tree.cell.up.left.position, tree.cell.up.right.position, tree.cell.down.left.position, tree.cell.down.right.position])
+        excluded_positions.extend([tree.position, tree.cell.up.position, tree.cell.down.position, tree.cell.left.position, tree.cell.right.position, tree.cell.up.left.position, tree.cell.up.right.position, tree.cell.down.left.position, tree.cell.down.right.position])
 
-    # 目标位置及其周围，也不能种树
+    # 已经选好的目标位置不能种树
     for _, cell in planter_target.items():
-        if get_distance(cell.position, oppo_base_position) <= int(AREA_SIZE / 2):
-            # 如果是敌方家门口的，就不考虑九宫格了
-            excluded_positions.extend([cell.position])
-            continue
-        excluded_positions.extend([cell.position, cell.up.position, cell.down.position, cell.left.position, cell.right.position,
-                                  cell.up.left.position, cell.up.right.position, cell.down.left.position, cell.down.right.position])
+        excluded_positions.extend([cell.position])
 
     for _loc, cell in map_carbon_cell.items():
         # 家门口附近的不考虑
@@ -115,7 +109,6 @@ def calculate_carbon_contain(map_carbon_cell: Dict, ours_info: Player, planter_t
         # TODO: 这边的权重可以进行修改
         total_carbon = get_sorrounding_carbons(cell)
         if good:  # 奖励一下，鼓励种他们家门口
-            # total_carbon += int(AREA_SIZE / 2)
             total_carbon *= 1.5
         carbon_contain_dict[cell] = total_carbon
 
@@ -276,45 +269,42 @@ class PlanterAct(AgentBase):
         self.planter_target = dict()
 
     def is_enough_tree(self):
-        ours_info = self.board.current_player
-        oppo_info = self.board.opponents[0]
-        tree_num_sum = 0  # 在场所有树的数量
-        if ours_info.trees:
-            tree_num_sum += len(ours_info.trees)
-        if oppo_info.trees:
-            tree_num_sum += len(oppo_info.trees)
+        if len(self.board.trees) > TREE_PLANTED_LIMIT:
+            return True
+        return False
 
-        is_enough = False
-        if tree_num_sum > TREE_PLANTED_LIMIT:
-            is_enough = True
-        return is_enough
+    
+    def get_rob_nearest_tree(self, planter: Planter, oppo: Player, excluded_pos: List[Point]):
+        """抢离得最近的敌人的树"""
+        if not oppo.trees:
+            return None
+        min_dis = 999999
+        best_cell = None
+        for tree in oppo.trees:
+            tree_pos = tree.position
+            if tree_pos in excluded_pos:  # 已经有人去抢了
+                continue
+            else:
+                dis = get_distance(planter.position, tree_pos)
+                if dis < min_dis:
+                    min_dis = dis
+                    best_cell = tree.cell
+        return best_cell
+    
 
     # TODO: 这个函数有问题，需要优化
     def _target_plan(self, planter: Planter, carbon_sort_dict: Dict, ours_info, oppo_info) -> Optional[Cell]:
         """Planter 我们的种树员，carbon_sort_dict Cell碳含量从多到少排序"""
         # TODO: oppo_info 这个地方可能是多个对手，决赛时要注意
         planter_position = planter.position
-        planned_target = [Point(*_v.position)
-                          for _k, _v in self.planter_target.items()]   # 计划的位置
+        planned_target = [tcell.position for pid, tcell in self.planter_target.items()]   # 已经包含在计划内的位置
 
         is_enough_tree = self.is_enough_tree()
         # 如果树达到最大值，去抢树吧
         if is_enough_tree:
-            # 如果敌方有树，就去抢树
-            if oppo_info.trees:
-                min_dis = 999999
-                best_cell = None
-                for tree in oppo_info.trees:
-                    tree_pos = tree.position
-                    if tree_pos in planned_target:  # 已经有人去抢了
-                        continue
-                    else:
-                        dis = get_distance(planter_position, tree_pos)
-                        if dis < min_dis:
-                            min_dis = dis
-                            best_cell = tree.cell
-                if best_cell:  # 选择最近的一棵敌方的树
-                    return best_cell
+            best_cell = self.get_rob_nearest_tree(planter, oppo_info, planned_target)
+            if best_cell:
+                return best_cell
 
         # 取碳排量最高的前n
         carbon_sort_dict_top_n = \
@@ -420,15 +410,13 @@ class PlanterAct(AgentBase):
 
     def check_home_nearby_tree(self):
         # 遍历敌方的 tree
-        board = self.board
-        our_id = board.current_player_id
-        base_pos = board.current_player.recrtCenters[0].position
+        base_pos = self.board.current_player.recrtCenters[0].position
         # TODO: 这里可能是多个敌人
-        oppo_trees = board.opponents[0].trees
+        oppo_trees = self.board.opponents[0].trees
 
         # 我方所有种树员
         id2planter_dict = {}
-        for p in board.current_player.planters:
+        for p in self.board.current_player.planters:
             planterid = p.id
             id2planter_dict[planterid] = p
 
@@ -439,37 +427,30 @@ class PlanterAct(AgentBase):
 
         for tree in oppo_trees:
             tree_pos = tree.cell.position
-            if tree_pos in planter_target_positions_2_pid:
-                this_pid = planter_target_positions_2_pid[tree_pos]
-                if this_pid in id2planter_dict:
-                    del id2planter_dict[this_pid]  # 剔除这个有任务的 planter
+            dis_tree2base = get_distance(base_pos, tree_pos)
+            if dis_tree2base > int(AREA_SIZE / 2):
                 continue
 
-            if len(id2planter_dict) == 0:  # 没有足够的 planter 了
+            # 需要拔掉, 挑一个最近的种树员
+            print('found enermy tree in base, rob it.')
+            found = False
+            min_dis = 1000000
+            best_plid = None
+            for planter_id, planter in id2planter_dict.items():
+                dis = get_distance(planter.position, tree_pos)
+                if dis < min_dis:
+                    min_dis = dis
+                    best_plid = planter_id
+                    found = True
+            if found:
+                # 就算之前有任务了，这里直接覆盖
+                this_planter = self.board.workers[best_plid]
+                self.is_target_changeable(this_planter, tree.cell, overwrite=True)
+                self.planter_target[best_plid] = tree.cell
+                print(f'enermy tree pos : {tree.cell.position}, planter pos : {this_planter.position}')
+                del id2planter_dict[best_plid]  # 从候选列表里剔除
+            else:
                 break
-
-            dis_tree2base = get_distance(base_pos, tree.cell.position)
-            if dis_tree2base <= int(AREA_SIZE / 2):
-                # 需要拔掉, 挑一个最近的种树员
-                print('found enermy tree in base, rob it.')
-                found = False
-                min_dis = 1000000
-                best_plid = None
-                for planter_id, planter in id2planter_dict.items():
-                    dis = get_distance(planter.position, tree.cell.position)
-                    if dis < min_dis:
-                        min_dis = dis
-                        best_plid = planter_id
-                        found = True
-                if found:
-                    # 就算之前有任务了，这里直接覆盖
-                    self.planter_target[best_plid] = tree.cell
-                    assign_planter = id2planter_dict[best_plid]
-                    print(
-                        f'enermy tree pos : {tree.cell.position}, planter pos : {assign_planter.position}')
-                    del id2planter_dict[best_plid]  # 从候选列表里剔除
-                else:
-                    break
 
     def get_near_tree_cell(self, planter: Planter):
         # d <= 2 距离内的情况
@@ -483,11 +464,54 @@ class PlanterAct(AgentBase):
         ]
         for cell in check_cells:
             tree = cell.tree
-            if tree:
+            if tree and (not cell.planter):
                 tree_pid = tree.player_id
                 if tree_pid != our_id:
                     return cell
         return None
+
+    def is_target_changeable(self, planter: Planter, new_cell: Cell, overwrite=False):
+        new_pos = new_cell.position
+        target2planter = {tcell.position: self.board.workers[pid] for pid, tcell in self.planter_target.items()}
+        old_planter: Planter = target2planter.get(new_pos, None)
+        # 1. new_cell 还没被认领
+        if not old_planter:
+            return True
+        # 2. new_cell 已经被人认领了，且不是本人，如果本人距离更近，那么就让之前的人放弃目标，我来替他完成
+        if overwrite:
+            self.planter_target.pop(old_planter.id)
+            return True
+        
+        if old_planter.id != planter.id:
+            old_dis = get_distance(new_pos, old_planter.position)
+            new_dis = get_distance(new_pos, planter.position)
+            if new_dis < old_dis:
+                self.planter_target.pop(old_planter.id)
+                return True
+        return False
+    
+    
+    def is_current_pos_better(self, planter: Planter):
+        """如果之前目标是去种树（target_cell是空的），且现在的位置为空，且碳含量更多，就地种树"""
+        cur_pos = planter.position
+        our_base = self.board.current_player.recrtCenters[0].cell
+        # 如果当前很危险，赶紧跑
+        if cur_pos in danger_zone:
+            return False
+        if get_distance(cur_pos, our_base.position) <= int(AREA_SIZE / 2):
+            return False
+        target_cell = self.planter_target[planter.id]
+        target_cell = self.board[target_cell.position]
+        if target_cell.worker or target_cell.tree or planter.cell.tree:
+            return False
+        if target_cell.position == cur_pos:
+            return False
+        old_carbon = get_sorrounding_carbons(target_cell)
+        new_carbon = get_sorrounding_carbons(planter.cell)
+        if new_carbon > old_carbon:
+            return True
+        return False
+    
 
     def move(self, ours_info: Player, oppo_info: List[Player], **kwargs):
         #
@@ -502,7 +526,7 @@ class PlanterAct(AgentBase):
         for wid, cell in self.planter_target.items():
             if wid in ours_info.worker_ids:
                 new_planter_target[wid] = cell
-        self.planter_target = new_planter_target
+        self.planter_target: Dict[str, Cell] = new_planter_target
 
         move_action_dict: Dict[str, str] = {}  # 这个最后遍历一遍 planters 就行了
 
@@ -510,39 +534,42 @@ class PlanterAct(AgentBase):
         # 如果planter信息是空的，则无需执行任何操作
         if ours_info.planters == []:
             return None
-
-        map_carbon_cell = kwargs['map_carbon_location']
+        
         cur_board: Board = kwargs['cur_board']
         self.board = cur_board
+        map_carbon_cell = self.board.cells
         configuration = kwargs['configuration']
 
         # 检查一下家门口有没有敌方的树，有的话，离得最近的种树员去拔掉
         self.check_home_nearby_tree()
 
-        carbon_sort_dict = calculate_carbon_contain(
-            map_carbon_cell, ours_info, self.planter_target, self.board)  # 每一次move都先计算一次附近碳多少的分布
+        # 每一次move都先计算一次附近碳多少的分布
+        carbon_sort_dict = calculate_carbon_contain(map_carbon_cell, ours_info, self.planter_target, self.board)
         
         next_flag_position = None
         for planter in ours_info.planters:
             if next_flag_position:  # 这里标记的上一个 planter 的位置
                 danger_zone[next_flag_position] = 1
             next_flag_position = planter.position  # 这里记录该 planter 下一个位置，默认是本身, 如果后面有移动，那么更新这个变量
+            
             is_protect_or_rob_tree = self.protect_or_rob_tree(planter, ours_info, oppo_info)
             if is_protect_or_rob_tree: # 如果是目标待定状态，且当前位置有树
                 # 如果当前种树员站在自己的树下面，同时树的附近(d<=2)有敌方种树员,那么不动，保护树
                 # 或者是敌人的树，抢树
                 continue
             
+            # TODO: 判断是否全部进入抢树状态，如果是那么考虑的只有距离因素了
+            
             if planter.id not in self.planter_target:   # 说明他还没有策略，要为其分配新的策略
 
-                target_cell = self._target_plan(
-                    planter=planter, carbon_sort_dict=carbon_sort_dict, ours_info=ours_info, oppo_info=oppo_info[0])  # 返回这个智能体要去哪里的一个字典
+                target_cell = self._target_plan(planter=planter, carbon_sort_dict=carbon_sort_dict,ours_info=ours_info, oppo_info=oppo_info[0])  # 返回这个智能体要去哪里的一个字典
 
                 self.planter_target[planter.id] = target_cell  # 给它新的行动
 
             # 当 planter 有策略了，那么看下一步的执行情况
             # 说明他有策略，看策略是否执行完毕，执行完了移出字典，没有执行完接着执行
             target_position = self.planter_target[planter.id].position
+            
             if planter.position == target_position:
                 self.planter_target.pop(planter.id)
 
@@ -577,42 +604,30 @@ class PlanterAct(AgentBase):
                 # 1. 目标是否已经被敌方占领
                 # 2. 目标成本是否已经 > 收益
                 target_cell = self.board[target_position]
-                is_enermy_tree = False
-                if target_cell.tree and target_cell.tree.player_id != ours_info.id:
-                    # 敌方已经种了树
-                    is_enermy_tree = True
-
                 old_position = planter.position
                 target_position = self.planter_target[planter.id].position
-
                 old_distance = get_distance(old_position, target_position)
 
-                if is_enermy_tree and old_distance == 2 and target_cell.planter:
-                    # 敌人已经开启护树模式, 那么我放弃这个位置
-                    self.planter_target.pop(planter.id)
-                    safe_moves = self.get_safe_moves(planter)
-                    if not safe_moves:
-                        print('enermy is here, no safe moves, stay still.')
-                        continue
-                    
-                    random_from_safe_move = choice(safe_moves)
-                    next_flag_position = get_moved_position(planter.position, random_from_safe_move)
-                    planter.next_action = random_from_safe_move
-                    print(f'current position: {old_position}')
-                    print(f'target position: {target_position}')
-                    print('abondon this tree, it is protected by enermy.')
-                    continue
+                # scan target
+                # target_cell   planter  
 
                 # 看一下附近(d<=2)有没有敌方的树
                 # check nearby has tree can rob
                 near_tree_cell = self.get_near_tree_cell(planter)
-                if near_tree_cell:
+                if near_tree_cell and self.is_target_changeable(planter, near_tree_cell):
                     self.planter_target[planter.id] = near_tree_cell
                     target_position = near_tree_cell.position
                     old_distance = get_distance(old_position, target_position)
 
                 # TODO: 如果此时已经发现目标碳含量不到原来一半了，直接改变 target
                 # 需要记录一下之前周围四个格子的碳含量
+                
+                # 如果之前目标是去种树（target_cell是空的），且现在的位置为空，且碳含量更多，就地种树
+                # is_current_pos_better(planter)
+                if self.is_current_pos_better(planter):
+                    self.planter_target.pop(planter.id)
+                    continue
+
 
                 
                 safe_moves = self.get_safe_moves(planter)
@@ -1533,7 +1548,6 @@ class PlanningPolicy(BasePolicy):
         planter_dict = self.planter_act.move(
             ours_info=ours,
             oppo_info=oppo,
-            map_carbon_location=self.board.cells,
             step=self.board.step,
             cur_board=self.board,
             configuration=configuration
