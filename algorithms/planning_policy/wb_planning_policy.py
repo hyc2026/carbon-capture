@@ -24,6 +24,7 @@ WorkerActions = [None, WorkerAction.UP, WorkerAction.RIGHT, WorkerAction.DOWN, W
 
 
 danger_zone: Dict[Point, int] = {}  # 保存种树员的危险区域，不能走，或者已被占领区域，每个回合更新一下
+our_agent_next_posistions: Dict[Point, int] = {}
 
 def get_distance(p1: Point, p2: Point) -> int:
     x1, y1 = p1[0], p1[1]
@@ -151,6 +152,8 @@ class CollectorAct(AgentBase):
             # 不能去敌方基地，危险
             if next_pos == self.oppo_base.position and collector.carbon == 0:
                 continue
+            if next_pos in our_agent_next_posistions:  # 这个位置有自己人也不能去
+                continue
             # 如果该位置敌方捕碳员的碳比我少也不能去
             worker = self.board[next_pos].worker
             if worker:
@@ -207,6 +210,8 @@ class CollectorAct(AgentBase):
         cur_board: Board = kwargs['cur_board']
         self.board = cur_board
         self.oppo: List[Player] = oppo_info
+        self.our: Player = ours_info
+
         oppo_base: Cell = oppo_info[0].recrtCenters[0].cell
         self.oppo_base: Cell = oppo_base
         # 距离敌方基地的距离
@@ -386,11 +391,17 @@ class PlanterAct(AgentBase):
         return False
 
     def get_safe_moves(self, planter: Planter):
-        safe_moves = []
+        safe_moves: List[WorkerAction] = []
+        print()
+        print(f'danger_zone: {danger_zone}')
+        print()
+
+        print(f'{planter.id}, current pos: {planter.position}')
         for move in WorkerAction.moves():
             new_pos = get_moved_position(planter.position, move)
             if new_pos not in danger_zone:  # 只要不在危险区域就ok
                 safe_moves.append(move)
+        print(f'safe moves: {str([m.name for m in safe_moves])}')
         return safe_moves
 
     def check_home_nearby_tree(self):
@@ -525,8 +536,14 @@ class PlanterAct(AgentBase):
         map_carbon_cell = self.board.cells
         configuration = kwargs['configuration']
 
+        
+        # TODO: 从第25步开始，一个种树员留家里防守，2个种树员去对方基地周围种树
+
+        
         # 检查一下家门口有没有敌方的树，有的话，离得最近的种树员去拔掉
         self.check_home_nearby_tree()
+
+
 
         # 每一次move都先计算一次附近碳多少的分布
         carbon_sort_dict = calculate_carbon_contain(map_carbon_cell, ours_info, self.planter_target, self.board)
@@ -535,6 +552,7 @@ class PlanterAct(AgentBase):
         for planter in ours_info.planters:
             if next_flag_position:  # 这里标记的上一个 planter 的位置
                 danger_zone[next_flag_position] = 1
+                our_agent_next_posistions[next_flag_position] = 1
             next_flag_position = planter.position  # 这里记录该 planter 下一个位置，默认是本身, 如果后面有移动，那么更新这个变量
             
             is_protect_or_rob_tree = self.protect_or_rob_tree(planter, ours_info, oppo_info)
@@ -645,6 +663,7 @@ class PlanterAct(AgentBase):
                     print(f'next position: {next_flag_position}')
                     print(f'in remaining route, no shutcut, random move {random_from_safe_move.name}')
         danger_zone[next_flag_position] = 1  # 标记最后一个 planter 的 postion
+        our_agent_next_posistions[next_flag_position] = 1
 
         
         # 最后再遍历一遍所有的 planter, 更新 move_action_dict 字典
@@ -929,6 +948,12 @@ class CollectorPlan(BasePlan):
     def check_validity(self):
         yes_it_is = isinstance(self.source_agent, Collector)
         return yes_it_is
+    
+    def get_total_carry_carbon(self):
+        total = 0
+        for c in self.our_player.collectors:
+            total += c.carbon
+        return total
 
     # 判断下一步是否安全，如果安全，那么捕碳员就会多待一会儿
     def can_action(self, next_position):
@@ -1162,6 +1187,8 @@ class CollectorRushHomePlan(CollectorPlan):
             # 离得太远也算了
             if source_center_distance < 300 - self.board.step - 10:
                 return False
+            if self.get_total_carry_carbon() > 3000 and self.source_agent.carbon > 500:
+                return True
         return True
 
     def calculate_score(self):
@@ -1488,15 +1515,12 @@ class PlanningPolicy(BasePolicy):
                     continue
                 collector_cell_plan[possible_plan.target.position] = collector_cell_plan.get(
                     possible_plan.target.position, 1)
-                source_agent_id_plan_dict[
-                    possible_plan.source_agent.id] = possible_plan
-                danger_zone[possible_plan.target.position] = 1
+                source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
             # Planter 的计划不在这里实现
             elif isinstance(possible_plan.source_agent, Planter):
                 pass
             else:
-                source_agent_id_plan_dict[
-                    possible_plan.source_agent.id] = possible_plan
+                source_agent_id_plan_dict[possible_plan.source_agent.id] = possible_plan
         return source_agent_id_plan_dict.values()
 
     def calculate_carbon_contain(map_carbon_cell: Dict) -> Dict:
@@ -1528,15 +1552,24 @@ class PlanningPolicy(BasePolicy):
 
         return map_carbon_sum_sorted
 
-    def plan2dict(self, plans):
+    def plan2dict(self, plans: List[BasePlan]):
         agent_id_2_action_number = {}
         for plan in plans:
             agent_id = plan.source_agent.id
+
+
             action = plan.translate_to_action()
             if action:
                 agent_id_2_action_number[agent_id] = action.value
+                if 'recrtCenter' not in agent_id:
+                    next_pos = get_moved_position(plan.source_agent.position, action)
+                    danger_zone[next_pos] = 1
+                    our_agent_next_posistions[next_pos] = 1
             else:
                 agent_id_2_action_number[agent_id] = 0
+                if 'recrtCenter' not in agent_id:
+                    danger_zone[plan.source_agent.position] = 1
+                    our_agent_next_posistions[plan.source_agent.position] = 1
         return agent_id_2_action_number
 
     def set_attacker(self, our: Player):
@@ -1583,12 +1616,11 @@ class PlanningPolicy(BasePolicy):
         ours, oppo = self.board.current_player, self.board.opponents
 
         # print(f'################ player id: {ours.id}')
-
-        if self.board.step > 280:
-            self.config['enabled_plans']['SpawnPlanterPlan']['planter_count_weight'] = -9
-            self.config['enabled_plans']['SpawnPlanterPlan']['collector_count_weight'] = 1
-            self.config['collector_config']['gohomethreshold'] = 99999
-            self.config['enabled_plans']['PlanterPlantTreePlan']['enabled'] = False
+        
+        if self.board.step > 10 and len(ours.workers) == 10 and ours.cash > 500:
+            self.config['collector_config']['gohomethreshold'] = 2000
+        else:
+            self.config['collector_config']['gohomethreshold'] = 100
 
         # 挑出1个捕碳员作为捣蛋鬼，为其设置标记，每次先判断其是否存活
         # 如果活着，那很好；如果没了，那看看当前有没有0碳员，有的话派出一个，指定它，没有就等待
@@ -1599,11 +1631,14 @@ class PlanningPolicy(BasePolicy):
             self.attacker = None
             attacker = None
 
-        global danger_zone
+        global danger_zone, our_agent_next_posistions
         danger_zone = {}
+        our_agent_next_posistions = {}
 
         possible_plans = self.make_possible_plans()
         plans = self.possible_plans_to_plans(possible_plans)
+
+        agent_id_2_action_number = self.plan2dict(plans)
 
         # print('plans')
         # print(plans)
@@ -1615,6 +1650,11 @@ class PlanningPolicy(BasePolicy):
 
         # 种树员的策略从这里开始吧，独立出来
         # 种树员做决策去哪里种树
+
+        print()
+        print(f'after collector move ...')
+        print(f'danger_zone: {danger_zone}')
+        print()
 
         planter_dict = self.planter_act.move(
             ours_info=ours,
@@ -1636,7 +1676,7 @@ class PlanningPolicy(BasePolicy):
                 configuration=configuration
             )
 
-        agent_id_2_action_number = self.plan2dict(plans)
+        
 
         """
         agent_id_2_action_number:
@@ -1653,7 +1693,15 @@ class PlanningPolicy(BasePolicy):
             command_list.update(attacker_dict)
 
         print(f'\n\n---------step: [ {self.board.step + 2} ]')
-        print(command_list)
+        pos2move = {}
+        for wk in ours.workers:
+            wid = wk.id
+            pos = wk.position
+            if wid in command_list:
+                pos2move[pos] = command_list[wid]
+            else:
+                pos2move[pos] = 'None'
+        print(pos2move)
         # 这个地方返回一个cmd字典
         # 类似这样
         """
