@@ -151,11 +151,6 @@ class CollectorAct(AgentBase):
             # 不能去敌方基地，危险
             if next_pos == self.oppo_base.position and collector.carbon == 0:
                 continue
-            # 如果该位置敌方捕碳员的碳比我少也不能去
-            worker = self.board[next_pos].worker
-            if worker:
-                if worker.is_collector and worker.player_id == self.oppo[0].id and worker.carbon < collector.carbon:
-                    continue
             safe_moves.append(move)
         return safe_moves
 
@@ -1160,7 +1155,7 @@ class CollectorRushHomePlan(CollectorPlan):
             if self.source_agent.carbon <= 10:
                 return False
             # 离得太远也算了
-            if source_center_distance < 300 - self.board.step - 10:
+            if source_center_distance < 300 - self.board.step - 5:
                 return False
         return True
 
@@ -1202,9 +1197,6 @@ class CollectorDefensePlan(CollectorPlan):
             
             # 距离目标位置 d <= 2, 且目标位置有敌方种树员，或者碳多的捕碳员
             if src_tgt_dis > 2:
-                return False
-            
-            if self.board.step > 290:
                 return False
             
             worker = self.target.worker
@@ -1595,7 +1587,8 @@ class PlanningPolicy(BasePolicy):
 
         attacker = self.set_attacker(ours)
 
-        if ours.cash < 60 and len(ours.workers) < 4 and self.board.step < 20:
+
+        if ours.cash < 60 and len(ours.workers) < 4:
             self.attacker = None
             attacker = None
 
@@ -1607,6 +1600,9 @@ class PlanningPolicy(BasePolicy):
 
         # print('plans')
         # print(plans)
+        """
+        dict_values([<algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a353880>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a341520>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a3748e0>, <algorithms.planning_policy.wb_planning_policy.CollectorGetCarbonPlan object at 0x7f9f9a341c10>])
+        """
 
         # 标记敌方 collector 的周围 cell, 至于敌方的planter就不管了
         for col in oppo[0].collectors:
@@ -1661,3 +1657,15 @@ class PlanningPolicy(BasePolicy):
         """
 
         return command_list
+
+
+
+
+
+my_policy = PlanningPolicy()
+
+
+def agent(obs, configuration):
+    global my_policy
+    commands = my_policy.take_action(obs, configuration)
+    return commands
