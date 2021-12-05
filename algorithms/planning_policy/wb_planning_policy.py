@@ -1184,7 +1184,7 @@ class CollectorRushHomePlan(CollectorPlan):
             # 碳很少也没必要回来
             if self.source_agent.carbon <= 10:
                 return False
-            # 离得太远也算了
+            # 还没到后期呢，先不回家
             if source_center_distance < 300 - self.board.step - 10:
                 return False
             if self.get_total_carry_carbon() > 3000 and self.source_agent.carbon > 500:
