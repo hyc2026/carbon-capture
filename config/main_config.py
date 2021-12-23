@@ -11,12 +11,12 @@ config = dict(
     ),
     envs=dict(  # 训练Env
         experient_name='runs',
-        n_threads=4,  # 并行进程数
+        n_threads=8,  # 并行进程数
         seed=42,
         training_from_scratch=True,  # False
     ),
     runner=dict(  # 训练配置项
-        episodes=1000,
+        episodes=2000,
         episode_length=300,
         save_interval=10,  # 多少个epoch保存下模型
         buffer_size=20000,
