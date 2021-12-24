@@ -38,7 +38,8 @@ class CarbonGameRunner:
 
         self._env_output = None
         self._trajectory_buffer = TrajectoryBuffer()
-        self._replay_buffer = ReplayBuffer(cfg.main_config.runner.buffer_size, self.device)
+        self._replay_buffer = ReplayBuffer(cfg.main_config.runner.buffer_size, cfg.main_config.runner.device)
+
         self.learner_policy = LearnerPolicy(cfg)  # 待训练的策略
 
         # 下面为selfplay的相关参数
@@ -52,34 +53,26 @@ class CarbonGameRunner:
         """
         Collect training data, perform training updates, and evaluate policy.
         """
-        self._env_output = self.env.reset(self.selfplay)  # carbon_baseline-master\utils\parallel_env.py  先重置环境
+        self._env_output = self.env.reset(self.selfplay)
+
         self._trajectory_buffer.reset()
 
         best_model_threshold = None  # 筛选最佳策略使用
-        # 运行self.episodes(1000)局游戏，每局游戏300回合
         for episode in range(self.start_episode, self.episodes):
-
             for policy in self.policies:  # 重置策略
                 policy.policy_reset(episode, self.episodes)
 
             # collect transitions of whole game. S(0), a(0), r(0), dones(1) -> ... -> S(T), r(T-1), dones(T)
-            # 收集整局游戏的log，每局包含n_threads个env，每个env运行300回合
-            experiences, collect_logs = self.collect_full_episode()  # 收集训练数据
-
+            experiences, collect_logs = self.collect_full_episode()
             for experience_data in experiences:
                 self._replay_buffer.append(experience_data)
 
             # PPO training
-            # 根据这局游戏的训练数据训练模型
             train_logs = self.learner_policy.train(self._replay_buffer)
-
             self._replay_buffer.reset()  # drop training data
 
             # save state
             v = collect_logs['env_return']
-            # 根据这局游戏的env_return，判断best model
-            # 这里的v是这局游戏每个env满足游戏结束条件时的cash收益的平均值
-            # 这里每个env的cash收益考虑了对局的胜负状态，如果赢了会有300的reward奖励，输了会有-300的惩罚
             if best_model_threshold is None or v >= best_model_threshold:  # save best model
                 self.save(episode, is_best=True)
                 best_model_threshold = v
@@ -114,67 +107,49 @@ class CarbonGameRunner:
     def collect_full_episode(self) -> Tuple[List[List[Dict[str, Dict]]], Dict[str, float]]:
         """
         collect full transitions and statistical logs during the full episode.
-
         :return return_data: (List[List[Dict[str, Dict]]]) full transitions of the agents appeared in the game.
         :return collect_logs: (Dict[str, float]) the statistical data of the transitions data
         """
         return_data = []
         collect_logs = defaultdict(list)
-        # n_threads个env均运行300回合，收集运行中的log
         for step in range(self.episode_length):
-
-            # 运行一个回合得到运行结果
             experience_data, collect_log = self._collect()
-            # 判断当前回合内哪个env(thread)的游戏满足结束条件了，就把log加入loglist
-            # 当某个env(thread)的游戏满足结束条件时，不停止游戏，而是继续让游戏运行下去，如果再次满足结束条件就再次把log加入loglist，直到300回合
+
             if experience_data:  # add to replay buffer
                 return_data.append(experience_data)
 
                 for key, value in collect_log.items():
                     collect_logs[key].extend(value)
-        # 这里len(collect_logs[k]) = len(return_data) >= n_threads，是300回合内n_threads个env满足结束条件的次数
-        # print(collect_logs['env_return'])
         collect_logs = {k: np.mean(v) for k, v in collect_logs.items()}
         return return_data, collect_logs
 
     def _collect(self) -> Tuple[List[Dict[str, Dict]], Dict[str, List]]:
         """
         Collect one step's transition data (environment output and policy output).
-        收集转移数据，环境输出s_t和策略输出a_t
-
         If the environments are finished, then return transitions and statistical data of total agents
         in the whole episode.
-
         :return return_data: (List[Dict[str, Dict]]) the transitions of total agents in entire games or empty
             if no games end.
         :return collect_log: (Dict[str, List]) the statistical data of the transitions data
         """
-        # 开始时 self._env_output 是重置环境的输出，
         env_outputs = self._env_output if self.selfplay else [self._env_output]  # policy first, then env
-        # env_outputs: [[agent_id, obs(state), info, available_actions]]
-        # env_outputs 里面包含了每个agent的id、特征、可执行的动作、获得的reward(非init)，也包括了整个env的reward(非init)
 
         policy_outputs = []
-        
-        for policy_id, env_output in enumerate(env_outputs): # 这里枚举每一个player的env_output
-            
-            current_policy = self.policies[policy_id]  # 当前player对应的policy (NN的参数)
+        for policy_id, env_output in enumerate(env_outputs):  # 每个选手
+            current_policy = self.policies[policy_id]
             policy_output = self.policy_actions_values(current_policy, env_output)  # 策略输出结果
 
             if current_policy.can_sample_trajectory():  # 添加以作为训练数据
                 self._trajectory_buffer.add_policy_data(policy_id, policy_output)
 
             policy_outputs.append(policy_output)
-
         policy_outputs = {key: [d[key] for d in policy_outputs] for key in policy_outputs[0]}  # env first, then policy
 
         # a(t) -> r(t), S(t+1), done(t+1)
-        # 解析策略输出，令env按照commands运行一步(游戏进行一个回合)，并得到运行之后新的env_outputs
         env_commands = self.to_env_commands(policy_outputs)
         raw_env_output = self.env.step(env_commands)
         env_outputs = raw_env_output if self.selfplay else [raw_env_output]
-        
-        # env_outputs 是一个list，大小为(2 if selfpaly else 1, n_threads)
+
         for policy_id, env_output_ in enumerate(env_outputs):
             current_policy = self.policies[policy_id]
             if current_policy.can_sample_trajectory():  # 添加以作为训练数据
@@ -184,13 +159,11 @@ class CarbonGameRunner:
             if current_policy == self.learner_policy:
                 for env_id, env_out in enumerate(env_output_):
                     self._env_returns[env_id] += env_out['env_reward']
-                    # print(f"env_id: {env_id}, env_out: {env_out['env_reward']}, env_tot_reward: {self._env_returns[env_id]}")
 
         return_data, collect_log = [], defaultdict(list)
 
         done_env_ids = [env_id for env_id, env_output_ in enumerate(env_outputs[0])  # 选取第一个玩家,检查游戏结束状态
                         if all(env_output_['done'])]
-
         for env_id in done_env_ids:  # 若游戏结束,收集所有agent的transition数据,并返回
             transitions = defaultdict(dict)
             for policy_id, env_output_ in enumerate(env_outputs):
@@ -212,7 +185,6 @@ class CarbonGameRunner:
 
                 if current_policy == self.learner_policy:  # 仅收集训练策略的统计数据
                     collect_log['env_return'].append(self._env_returns[env_id])  # 环境结束,奖励总和
-                    # print(env_id, self._env_returns[env_id])
                     self._env_returns[env_id] = 0.0
 
                     collect_log['accumulate_agent_count'].append(len(policy_data))
@@ -241,7 +213,6 @@ class CarbonGameRunner:
             env_policy_outputs = policy_outputs[env_id]  #
 
             policy_commands = []
-            
             for output in env_policy_outputs:  # for each policy's output
                 commands = LearnerPolicy.to_env_commands({agent_id: agent_value.action.item()
                                                           for agent_id, agent_value in output.items()})
@@ -257,24 +228,19 @@ class CarbonGameRunner:
                               env_output: List[Dict[str, Any]]) -> Dict[int, Dict[str, EasyDict]]:
         """
         Return actions and values predicted by policy according to environment outputs.
-        # 根据当前网络的输入和环境状态来得到输出。
-
         :param policy: (BasePolicy) current policy instance
         :param env_output: (List[Dict[str, Any]]) environment output related to the current policy
         :return: policy_output: (Dict[int, Dict[str, EasyDict]]) policy output for each environments and agents
         """
-        agent_ids, obs, available_actions = zip(*[(output.get('reserved_agent_id',
-                                                   output['agent_id']),
-                                                   output.get('reserved_obs', output['obs']),
-                                                   output.get('reserved_available_actions', output['available_actions']))
-                                                for output in env_output])
-
+        agent_ids, obs, available_actions = zip(*[(output['agent_id'], output['obs'], output['available_actions'])
+                                                  for output in env_output])
         flatten_obs = [value for env_obs in obs for value in env_obs]
-        flatten_obs_tensor = torch.from_numpy(np.stack(flatten_obs)).to(self.device)
+        flatten_obs_tensor = torch.from_numpy(np.stack(flatten_obs))
         flatten_available_actions = np.concatenate(available_actions)
-        # 根据上一时刻的actions和observation(state)，得到当前时刻的actions
+
         flatten_action, flatten_log_prob = policy.get_actions(flatten_obs_tensor, flatten_available_actions)  # a(t)
         flatten_value = self.learner_policy.get_values(flatten_obs_tensor)  # V(t)
+
         policy_output = defaultdict(dict)
         c = 0
         for env_id, agent_ids_per_env in enumerate(agent_ids):  # for each env
@@ -321,7 +287,6 @@ class CarbonGameRunner:
     def save(self, episode: int, is_best=False):
         """
         Save runner state dict (models, optimizers and episode) into local file.
-
         :param episode: (int) Indicates the current episode
         :param is_best: (bool optional) Indicates whether it is a best model or not.
         """
@@ -339,7 +304,6 @@ class CarbonGameRunner:
     def restore(self, model_path: str, strict=True):
         """
         Restore runner state from model path for training.
-
         :param model_path: (str) The path of the trained model.
         :param strict: (bool optional) whether to strictly enforce the keys of torch models
         """

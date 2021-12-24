@@ -24,8 +24,9 @@ def time_cost(start):
 
 if __name__ == '__main__':
 
-    player = EvalPolicy()
-    # model_path = './runs/run2/models/model_best.pth'
+    model_policy = EvalPolicy()
+    model_path = './runs/run3/models/model_best.pth'
+    model_policy.restore(torch.load(model_path))
     #model_path = '/sdb/v-bingwang/workspace/carbon_baseline_cuda/runs/run2/models/model_950.pth'
     my_ploicy = PlanningPolicy()
 
@@ -33,14 +34,14 @@ if __name__ == '__main__':
 
     # function for testing agent
     def take_action(observation, configuration):
-        action = player.take_action(observation, configuration)
+        action = model_policy.take_action(observation, configuration)
         return action
 
     # function for testing
     def evaluate_agent():
         rew, _, _, _ = evaluate(
             "carbon",
-            agents=[my_ploicy.take_action, "random"],
+            agents=[take_action, "random"],
             configuration={"randomSeed": 1},
             debug=True,
             num_episodes=NUM_EPISODES)  # default == 1
