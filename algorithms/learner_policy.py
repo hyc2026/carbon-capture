@@ -4,11 +4,11 @@ from easydict import EasyDict
 import numpy as np
 import torch
 import torch.optim as optim
-from torch.distributions import Categorical
 import torch.nn.functional as F
 
 from utils.utils import to_tensor, update_linear_schedule, calculate_gard_norm
 from utils.replay_buffer import ReplayBuffer
+from utils.categorical_masked import CategoricalMasked
 
 from algorithms.base_policy import BasePolicy
 
@@ -32,16 +32,20 @@ class LearnerPolicy(BasePolicy):
         self.target_kl = cfg.main_config.runner.policy.target_kl
         self.actor_max_grad_norm = cfg.main_config.runner.policy.actor_max_grad_norm
         self.critic_max_grad_norm = cfg.main_config.runner.policy.critic_max_grad_norm
+        self.device = cfg.main_config.runner.device
         self.tensor_kwargs = dict(dtype=torch.float32, device=cfg.main_config.runner.device)
 
         self.actor_optimizer = optim.AdamW(self.actor_model.parameters(), lr=self.learning_rate)
         self.critic_optimizer = optim.AdamW(self.critic_model.parameters(), lr=self.learning_rate)
 
+        self.actor_model.to(self.device)
+        self.critic_model.to(self.device)
+
     def policy_reset(self, episode: int, n_episodes: int):
         self.actor_model.eval()
         self.critic_model.eval()
         self._lr_decay(episode, n_episodes)
-        
+
     def can_sample_trajectory(self):
         return True
 
@@ -51,7 +55,6 @@ class LearnerPolicy(BasePolicy):
         :param observation:  (np.ndarray)local agent inputs to the actor.
         :param available_actions: (np.ndarray) denotes which actions are available to agent
                                   (if None, all actions available)
-
         :return actions: (torch.Tensor) actions to take.
         :return action_log_probs: (torch.Tensor) log probabilities of chosen actions.
         """
@@ -59,10 +62,9 @@ class LearnerPolicy(BasePolicy):
 
         action_logits = self.actor_model(obs)
         if available_actions is not None:
-            available_actions = to_tensor(available_actions).to(**self.tensor_kwargs)
-            action_logits[available_actions == 0] = torch.finfo(torch.float32).min
+            available_actions = to_tensor(available_actions)
 
-        dist = Categorical(logits=action_logits)
+        dist = CategoricalMasked(logits=action_logits, mask=available_actions)
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
@@ -89,7 +91,6 @@ class LearnerPolicy(BasePolicy):
     def restore(self, model_dict: Dict[str, OrderedDict[str, torch.Tensor]], strict=True):
         """
         Restore models and optimizers from model_dict.
-
         :param model_dict: (dict) State dict of models and optimizers.
         :param strict: (bool, optional) whether to strictly enforce the keys of torch models
         """
@@ -98,6 +99,9 @@ class LearnerPolicy(BasePolicy):
 
         self.critic_model.load_state_dict(model_dict['critic'], strict=strict)
         self.critic_optimizer.load_state_dict(model_dict['critic_optimizer'])
+
+        self.actor_model.to(self.device)
+        self.critic_model.to(self.device)
 
     def evaluate_actions(self, observation, action, available_actions=None):
         """
@@ -112,10 +116,9 @@ class LearnerPolicy(BasePolicy):
 
         action_logits = self.actor_model(obs)
         if available_actions is not None:
-            available_actions = to_tensor(available_actions).to(**self.tensor_kwargs)
-            action_logits[available_actions == 0] = torch.finfo(torch.float32).min
+            available_actions = to_tensor(available_actions)
 
-        dist = Categorical(logits=action_logits)
+        dist = CategoricalMasked(logits=action_logits, mask=available_actions)
         log_prob = dist.log_prob(action)
 
         return log_prob, dist.entropy().mean()
@@ -125,7 +128,6 @@ class LearnerPolicy(BasePolicy):
         Get value function predictions.
         :param observation: Agent observations.
         :param to_numpy: predicted value converted to numpy or not (for training or evaluating).
-
         :return values: (torch.Tensor) value function predictions.
         """
         obs = to_tensor(observation).to(**self.tensor_kwargs)
@@ -138,7 +140,6 @@ class LearnerPolicy(BasePolicy):
     def train(self, buffer: ReplayBuffer) -> Dict[str, float]:
         """
         train actor and critic models using PPO Algorithms.
-
         :param buffer: (ReplayBuffer) the replay buffer which provide data for training.
         :return train_logs: (Dict[str, float]) the statistical log of the training.
         """
@@ -160,7 +161,6 @@ class LearnerPolicy(BasePolicy):
     def _train(self, batch: EasyDict) -> Dict[str, float]:
         """
         train actor and critic models once using batch samples.
-
         :param batch: (EasyDict) batch data for training
         :return output: (Dict[str, float]) the statistical log of the training.
         """
