@@ -6,6 +6,7 @@ from zerosum_env import evaluate
 from zerosum_env.envs.carbon.helpers import *
 from algorithms.planning_policy.planning_policy import PlanningPolicy
 from algorithms.eval_policy import EvalPolicy
+from zyp_model import agent
 
 try:
     NUM_EPISODES = int(sys.argv[1])
@@ -25,8 +26,8 @@ def time_cost(start):
 if __name__ == '__main__':
 
     model_policy = EvalPolicy()
-    model_path = './runs/run3/models/model_best.pth'
-    model_policy.restore(torch.load(model_path))
+    # model_path = './runs/run3/models/model_best.pth'
+    # model_policy.restore(torch.load(model_path))
     #model_path = '/sdb/v-bingwang/workspace/carbon_baseline_cuda/runs/run2/models/model_950.pth'
     my_ploicy = PlanningPolicy()
 
@@ -41,7 +42,7 @@ if __name__ == '__main__':
     def evaluate_agent():
         rew, _, _, _ = evaluate(
             "carbon",
-            agents=[take_action, "random"],
+            agents=[agent, "random"],
             configuration={"randomSeed": 1},
             debug=True,
             num_episodes=NUM_EPISODES)  # default == 1
