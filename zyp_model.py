@@ -94,7 +94,6 @@ class DataLoader:
         pass
 
     def process_data(self, data: list, batch_size=256):
-        print("pre")
         final_batches = []
         middle_data = []
         labels = []
@@ -149,7 +148,7 @@ class DataLoader:
 
 
 class ActionImitation:
-    def __init__(self, device='cuda:0', lr=2e-4) -> None:
+    def __init__(self, device='cuda:0', lr=1e-3) -> None:
         if 'cuda' in device and not torch.cuda.is_available():
             self.device = 'cpu'
         else:
@@ -202,7 +201,7 @@ class ActionImitation:
                 #scheduler.step()
                 optimizer.zero_grad()
                 self.update_loss(loss, batch_size=len(batch))
-                if eval_batches and (i % (step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
+                if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
                     eval_result = self.eval(eval_batches)
                     logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
                     if eval_result > best_eval_result:
@@ -220,9 +219,10 @@ class ActionImitation:
     def eval(self, batches):
         model = self.model
         model.eval()
+        logger.info(f"begin eval: batches count {len(batches)}")
         correct = 0
         total = 0
-        for batch in tqdm(batches, total=len(batches), desc="eval"):
+        for batch in batches:
             feature, target, _ = batch
             feature = tensor(feature).float()
             target = tensor(target)
@@ -308,10 +308,17 @@ if __name__ == '__main__':
     data_path = "data_10.pk"
     read_data = read_train_data_pickle(data_path)
     #read_data = eval(open('datasets_200.txt', 'r').read())
+    
+    logger.info(f"preprocessing: data count {len(read_data)}")
     batches = data_loader.process_data(read_data)
-    eval_batches = random.sample(batches, int(len(batches) * 0.1))
+    logger.info(f"preprocess finish: batches count {len(batches)}")
+    
+    random.shuffle(batches)
+    trian_size = int(len(batches) * 0.9)
+    train_batches = batches[:trian_size]
+    eval_batches = batches[trian_size:]
+    logger.info(f"train batches count: {len(train_batches)} eval batches count: {len(eval_batches)}")
+    model.train(train_batches, epoch=30, eval_batches=eval_batches, eval_per_epoch=2)
     # cur = batches[0][0][20:25], batches[0][1][20:25], batches[0][2][20:25]
     # print(cur[1], cur[2])
     # print(model.predict(cur))
-    model.train(batches, epoch=100, eval_batches=eval_batches, eval_per_epoch=2)
-    
