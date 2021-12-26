@@ -7,6 +7,7 @@ import numpy as np
 import json
 from submission import ObservationParser
 from tqdm import tqdm
+import random
 
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
@@ -278,7 +279,7 @@ def run_one_episode(collectPolicy, oppoPolicy="random"):
 
     collectPolicy.reset_record()
     e = make(environment="carbon", 
-             configuration={"randomSeed": 1},
+             configuration={"randomSeed": random.randint(1,2147483646)},
              steps=[],
              debug=False,
              state=None)
@@ -412,7 +413,7 @@ def main():
     data_list = data_list_1 + data_list_2   
     #open(save_file_name, 'w').write(str(data_list))
     import pickle
-    with open(save_file_name, 'wb') as f:
+    with open("data" + save_file_name, 'wb') as f:
         pickle.dump(data_list, f)
 
 if __name__ == "__main__":
