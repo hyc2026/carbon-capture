@@ -1,3 +1,4 @@
+from functools import total_ordering
 from datasets_make.daisheng_policy_1223 import MyPolicy as daishengPolicy
 import sys
 from zerosum_env import make, evaluate
@@ -5,6 +6,7 @@ from zerosum_env.envs.carbon.helpers import *
 import numpy as np
 import json
 from submission import ObservationParser
+from tqdm import tqdm
 
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
@@ -384,7 +386,7 @@ def transfer_ob_feature_to_model_feature(ob_result, label_agent2action=None):
 def collect_data(collectPolicy, oppoPolicy="random", episode_count=1):
     data_list = []
     ob_parser = ObservationParser()
-    for _ in range(episode_count):
+    for _ in tqdm(range(episode_count), total=episode_count):
         run_records = run_one_episode(collectPolicy, oppoPolicy)
         for overall_action, current_obs, previous_obs in run_records:
             local_obs, dones, available_actions = ob_parser.obs_transform(current_obs, previous_obs)
@@ -402,8 +404,12 @@ def main():
     save_file_name = sys.argv[1]
     episode_count = int(sys.argv[2])
     collectPolicy = daishengPolicy()
+
     oppoPolicy = "random"
-    data_list = collect_data(collectPolicy, oppoPolicy, episode_count)
+    data_list_1 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
+    oppoPolicy = daishengPolicy()
+    data_list_2 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
+    data_list = data_list_1 + data_list_2   
     open(save_file_name, 'w').write(str(data_list))
 
 if __name__ == "__main__":
