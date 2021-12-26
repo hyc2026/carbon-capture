@@ -7,11 +7,18 @@ from torch.optim import optimizer
 from algorithms.model import Model
 from numpy import array
 import copy
+import logging
 from zerosum_env.envs.carbon.helpers import \
     (Board, Player, Cell, Collector, Planter, Point, \
         RecrtCenter, Tree, Worker, RecrtCenterAction, WorkerAction)
 from tqdm import tqdm
 from submission import ObservationParser
+
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
                RecrtCenterAction.RECPLANTER]
@@ -155,7 +162,7 @@ class ActionImitation:
 
     def update_loss(self, loss, batch_size):
         self.total += batch_size
-        self.losses += loss * batch_size
+        self.losses += loss.detach().cpu() * batch_size
         self.ans = self.losses / self.total
         return self.ans
 
@@ -165,25 +172,41 @@ class ActionImitation:
 
 
 
-    def train(self, batches: list, epoch=22):
+    def train(self, batches: list, epoch=22, eval_batches=None, eval_per_epoch = 1):
         # 每个batch是两个list，feature_list和target_list
-        self.model.train()
-        for e in tqdm(epoch + 1):
-            print('epoch:', e)
+        
+        model = self.model
+        optimizer = self.optimizer
+        loss_func = func.cross_entropy
+        best_eval_result = 0
+        step_per_epoch = len(batches)
+        #eval_steps = [int(len(batches) / eval_per_epoch * i) for i in range(eval_per_epoch)]
+        for e in tqdm(range(epoch + 1), desc="epochs"):
             self.resume()
-            for batch in batches:
+            for i, batch in enumerate(tqdm(batches, total=len(batches), desc="step")):
+                model.train()
                 feature, target, _ = batch
                 feature = tensor(feature).float()
-                target=  tensor(target)
-                feature.to(self.device)
-                target.to(self.device)
-                predict = self.model(feature)
-                loss = func.cross_entropy(predict, target)
-                self.optimizer.zero_grad()
+                target = tensor(target)
+                
+                feature = feature.to(self.device)
+                target = target.to(self.device)
+
+                logits = model(feature)
+                loss = loss_func(logits, target)
+
                 loss.backward()
-                self.optimizer.step()
+                optimizer.step()
+                #scheduler.step()
+                optimizer.zero_grad()
                 self.update_loss(loss, batch_size=len(batch))
-            print(self.ans)
+                if eval_batches and (i % (step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
+                    eval_result = self.eval(eval_batches)
+                    logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
+                    if eval_result > best_eval_result:
+                        best_eval_result = eval_result
+                        self.save('models/best')
+            logger.info(f"epoch loss: {self.ans.item()}")
             self.save('models/epoch_' + str(e))
 
     def save(self, filename):
@@ -191,6 +214,28 @@ class ActionImitation:
 
     def load(self, model_path: str):
         self.model.load_state_dict(torch.load(model_path))
+    
+    def eval(self, batches):
+        model = self.model
+        model.eval()
+        correct = 0
+        total = 0
+        for batch in tqdm(batches, total=len(batches), desc="eval"):
+            feature, target, _ = batch
+            feature = tensor(feature).float()
+            target = tensor(target)
+            
+            feature = feature.to(self.device)
+            target = target.to(self.device)
+
+            logits = model(feature)
+            predict = torch.argmax(logits, 1)
+            label = target
+            correct += (predict == label).sum().item()
+            total += len(batch)
+        return correct / total
+
+
 
     # 只输入一个batch，就是当前的环境
     def predict(self, batch):
@@ -199,18 +244,16 @@ class ActionImitation:
         feature = tensor(feature).float()
         actor_probs = self.model(feature)
         final_dict = {}
-        actions = actor_probs.detach().numpy().argmax(axis=1)
+        actions_probs = actor_probs.detach().numpy()
         agent_num = len(agent_ids)
         for index in range(agent_num):
             cur_id = agent_ids[index]
-            cur_choice = actions[index]
             if 'recrtCenter' in cur_id:
                 # 转化中心预测的结果只有三种
-                if cur_choice > 2:
-                    cur_choice = 0 
+                cur_choice = actions_probs[index][:3].argmax(axis=1) 
                 cur_action =  BaseActions[cur_choice]
-                
             else:
+                cur_choice = actions_probs[index].argmax(axis=1)
                 cur_action = WorkerActions[cur_choice]
             if cur_action:
                 cur_action = cur_action.name
@@ -222,8 +265,9 @@ data_loader = DataLoader()
 model = ActionImitation()
 try:
     model.load('models/best')
+    logger.info('trian from checkpoint!!')
 except:
-    print('加载失败!')
+    logger.info('train from scratch!!')
     pass
 
 
@@ -243,12 +287,13 @@ def agent(obs, configuration):
     return commands
 
 if __name__ == '__main__':
-    read_data = eval(open('/Users/yupeng/Desktop/data.txt', 'r').read())
+    import random
+    read_data = eval(open('data.txt', 'r').read())
     batches = data_loader.process_data(read_data)
+    random.seed(2021)
+    eval_batches = random.sample(batches, int(len(batches) * 0.1))
     # cur = batches[0][0][20:25], batches[0][1][20:25], batches[0][2][20:25]
     # print(cur[1], cur[2])
-
     # print(model.predict(cur))
-    model.train(batches)
-    model.save('models/best')
+    model.train(batches, epoch=5, eval_batches=eval_batches, eval_per_epoch=2)
     
