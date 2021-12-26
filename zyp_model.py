@@ -13,6 +13,7 @@ from zerosum_env.envs.carbon.helpers import \
         RecrtCenter, Tree, Worker, RecrtCenterAction, WorkerAction)
 from tqdm import tqdm
 from submission import ObservationParser
+import pickle
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -93,6 +94,7 @@ class DataLoader:
         pass
 
     def process_data(self, data: list, batch_size=256):
+        print("pre")
         final_batches = []
         middle_data = []
         labels = []
@@ -242,18 +244,19 @@ class ActionImitation:
         self.model.eval()
         feature, _, agent_ids = batch
         feature = tensor(feature).float()
+        feature = feature.to(self.device)
         actor_probs = self.model(feature)
         final_dict = {}
-        actions_probs = actor_probs.detach().numpy()
+        actions_probs = actor_probs.detach().cpu().numpy()
         agent_num = len(agent_ids)
         for index in range(agent_num):
             cur_id = agent_ids[index]
             if 'recrtCenter' in cur_id:
                 # 转化中心预测的结果只有三种
-                cur_choice = actions_probs[index][:3].argmax(axis=1) 
+                cur_choice = actions_probs[index][:3].argmax() 
                 cur_action =  BaseActions[cur_choice]
             else:
-                cur_choice = actions_probs[index].argmax(axis=1)
+                cur_choice = actions_probs[index].argmax()
                 cur_action = WorkerActions[cur_choice]
             if cur_action:
                 cur_action = cur_action.name
@@ -286,14 +289,29 @@ def agent(obs, configuration):
         commands.pop(eve)
     return commands
 
+def read_train_data_pickle(data_path):
+    import os
+    if os.path.isdir(data_path):
+        file_name_list = os.listdir(data_path)
+        file_name_list = [os.path.join(data_path, _) for _ in file_name_list]
+    else:
+        file_name_list = [data_path]
+    read_data = []
+    for file_path in file_name_list:
+        with open(file_path, 'rb') as f:
+            read_data.extend(pickle.load(f))
+    return read_data  
+
 if __name__ == '__main__':
     import random
-    read_data = eval(open('data.txt', 'r').read())
-    batches = data_loader.process_data(read_data)
     random.seed(2021)
+    data_path = "data_10.pk"
+    read_data = read_train_data_pickle(data_path)
+    #read_data = eval(open('datasets_200.txt', 'r').read())
+    batches = data_loader.process_data(read_data)
     eval_batches = random.sample(batches, int(len(batches) * 0.1))
     # cur = batches[0][0][20:25], batches[0][1][20:25], batches[0][2][20:25]
     # print(cur[1], cur[2])
     # print(model.predict(cur))
-    model.train(batches, epoch=5, eval_batches=eval_batches, eval_per_epoch=2)
+    model.train(batches, epoch=100, eval_batches=eval_batches, eval_per_epoch=2)
     
