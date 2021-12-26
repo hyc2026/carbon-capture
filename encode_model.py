@@ -4,7 +4,7 @@ import torch
 
 
 if __name__ == "__main__":
-    model_path = "model.pth"  # your model file path
+    model_path = "runs/run5/models/model_best.pth"  # your model file path
 
     model_state_dict = torch.load(str(model_path), map_location=torch.device("cpu"))
     actor_model = model_state_dict['actor']
