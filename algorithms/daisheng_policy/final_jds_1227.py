@@ -1014,6 +1014,9 @@ class MyPolicy:
         self.previous_obs = copy.deepcopy(current_obs)
 
         return overall_action
+    
+    def reset_record(self):
+        self.record_list = []
 
 my_policy = MyPolicy()
 

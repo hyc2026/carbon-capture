@@ -406,10 +406,10 @@ def main():
     episode_count = int(sys.argv[2])
     collectPolicy = daishengPolicy()
 
-    oppoPolicy = "random"
-    data_list_1 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
+    # oppoPolicy = "random"
+    # data_list_1 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
     oppoPolicy = daishengPolicy()
-    data_list_2 = collect_data(collectPolicy, oppoPolicy, episode_count - int(episode_count / 2))
+    data_list_2 = collect_data(collectPolicy, oppoPolicy, episode_count)
     data_list = data_list_1 + data_list_2   
     #open(save_file_name, 'w').write(str(data_list))
     import pickle
