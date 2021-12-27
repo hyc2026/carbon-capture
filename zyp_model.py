@@ -214,12 +214,12 @@ class ActionImitation:
                     # scheduler.step()
                     optimizer.zero_grad()
                     self.update_loss(loss, batch_size=len(batch))
-                if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
-                    eval_result = self.eval(eval_batches)
-                    logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
-                    if eval_result > best_eval_result:
-                        best_eval_result = eval_result
-                        self.save('models/best')
+                    if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
+                        eval_result = self.eval(eval_batches)
+                        logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
+                        if eval_result > best_eval_result:
+                            best_eval_result = eval_result
+                            self.save('models/best')
                 logger.info(f"epoch loss: {self.ans.item()}")
                 self.save('models/epoch_' + str(e))
                 if flag == 0:
