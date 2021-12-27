@@ -179,10 +179,10 @@ class ActionImitation:
         step_per_epoch = len(batches)
         model.train()
         # eval_steps = [int(len(batches) / eval_per_epoch * i) for i in range(eval_per_epoch)]
-        cur_index = 1
-        flag = 0
         for e in tqdm(range(epoch + 1), desc="epochs"):
             self.resume()
+            cur_index = 1
+            flag = 0
             while 1:
                 if data_dir is not None:
                     cur_name = data_dir.strip('/') + '/' + 'data' + str(cur_index)
@@ -197,6 +197,7 @@ class ActionImitation:
                 if batches is None:
                     break
                 print('cur_batches_size:', len(batches))
+                random.shuffle(batches)
                 for i, batch in enumerate(tqdm(batches, total=len(batches), desc="step")):
 
                     feature, target, _ = batch
@@ -214,12 +215,12 @@ class ActionImitation:
                     # scheduler.step()
                     optimizer.zero_grad()
                     self.update_loss(loss, batch_size=len(batch))
-                    if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
-                        eval_result = self.eval(eval_batches)
-                        logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
-                        if eval_result > best_eval_result:
-                            best_eval_result = eval_result
-                            self.save('models/best')
+                # if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
+                eval_result = self.eval(eval_batches)
+                logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
+                if eval_result > best_eval_result:
+                    best_eval_result = eval_result
+                    self.save('models/best')
                 logger.info(f"epoch loss: {self.ans.item()}")
                 self.save('models/epoch_' + str(e))
                 if flag == 0:
@@ -341,7 +342,7 @@ if __name__ == '__main__':
     read_data = read_train_data_pickle(data_path)
     # read_data = eval(open('datasets_200.txt', 'r').read())
     data_directory = 'tmp_data/'
-    split_file(read_data, data_dir=data_directory)
+    split_file(read_data, split_size=1500, data_dir=data_directory)
     logger.info(f"preprocessing: data count {len(read_data)}")
     # batches = data_loader.process_data(read_data)
     # logger.info(f"preprocess finish: batches count {len(batches)}")
