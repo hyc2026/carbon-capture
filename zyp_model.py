@@ -188,7 +188,6 @@ class ActionImitation:
                     cur_name = data_dir.strip('/') + '/' + 'data' + str(cur_index)
                     logger.info(f'cur_name:  {cur_name}')
                     cur_index += 1
-                    logger.info(f'cur_name:  {cur_name}')
                     if os.path.exists(cur_name):
                         with open(cur_name, 'rb') as f:
                             batches = pickle.load(f)
