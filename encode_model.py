@@ -4,15 +4,15 @@ import torch
 
 
 if __name__ == "__main__":
-    model_path = "runs/run5/models/model_best.pth"  # your model file path
+    model_path = "/home/zhangyp-s21/projects/carbon_baseline_cuda/models/best"  # your model file path
 
-    model_state_dict = torch.load(str(model_path), map_location=torch.device("cpu"))
-    actor_model = model_state_dict['actor']
+    model_state_dict = torch.load(model_path)
+    # actor_model = model_state_dict['actor']
 
-    for name, param in actor_model.items():
-        actor_model[name] = param.numpy()
+    # for name, param in actor_model.items():
+    #     actor_model[name] = param.numpy()
 
-    model_byte = base64.b64encode(pickle.dumps(actor_model))
+    model_byte = base64.b64encode(pickle.dumps(model_state_dict))
     with open("actor.txt", 'wb') as f:
         f.write(model_byte)
     pass
