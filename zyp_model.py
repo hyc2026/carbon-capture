@@ -185,15 +185,18 @@ class ActionImitation:
             self.resume()
             while 1:
                 if data_dir is not None:
-                    cur_name = data_dir.strip('/') + '/' + str(cur_index)
+                    cur_name = data_dir.strip('/') + '/' + 'data' + str(cur_index)
+                    cur_index += 1
                     if os.path.exists(cur_name):
-                        with open(cur_name) as f:
+                        with open(cur_name, 'rb') as f:
                             batches = pickle.load(f)
+                            batches = DataLoader.process_data(batches)
                             flag = 1
                     else:
                         break
                 if batches is None:
                     break
+                print('cur_batches_size:', len(batches))
                 for i, batch in enumerate(tqdm(batches, total=len(batches), desc="step")):
 
                     feature, target, _ = batch
@@ -315,13 +318,14 @@ def read_train_data_pickle(data_path):
 
 def split_file(content_list: list, split_size=1000, data_dir='tmp_data/'):
     count = 1
+    name = 'data'
     length = len(content_list)
     global test_batches
     for start in range(0, length, split_size):
         end = start + split_size if start + split_size <= length else length
         cur = content_list[start: end]
         if end != length:
-            with open(data_dir + str(count), 'wb') as f:
+            with open(data_dir + name + str(count), 'wb') as f:
                 pickle.dump(cur, f)
         else:
             test_batches = DataLoader.process_data(cur)
@@ -346,8 +350,9 @@ if __name__ == '__main__':
     # train_batches = batches[:trian_size]
     # eval_batches = batches[trian_size:]
 
-    logger.info(f"train batches count: {len(train_batches)} eval batches count: {len(eval_batches)}")
+    logger.info(f"train batches count: {len(train_batches)} eval batches count: {len(test_batches)}")
     model.train(train_batches, epoch=30, eval_batches=test_batches, eval_per_epoch=2, data_dir=data_directory)
+    
     # cur = batches[0][0][20:25], batches[0][1][20:25], batches[0][2][20:25]
     # print(cur[1], cur[2])
     # print(model.predict(cur))
