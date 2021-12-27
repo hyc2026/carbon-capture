@@ -179,13 +179,14 @@ class ActionImitation:
         step_per_epoch = len(batches)
         model.train()
         # eval_steps = [int(len(batches) / eval_per_epoch * i) for i in range(eval_per_epoch)]
-        for e in tqdm(range(epoch + 1), desc="epochs"):
+        for e in tqdm(range(epoch), desc="epochs"):
             self.resume()
             cur_index = 1
             flag = 0
             while 1:
                 if data_dir is not None:
                     cur_name = data_dir.strip('/') + '/' + 'data' + str(cur_index)
+                    logger.info(f'cur_name:  {cur_name}')
                     cur_index += 1
                     if os.path.exists(cur_name):
                         with open(cur_name, 'rb') as f:
@@ -196,7 +197,7 @@ class ActionImitation:
                         break
                 if batches is None:
                     break
-                print('cur_batches_size:', len(batches))
+                logger.info(f'cur_batches_size: {len(batches)}')
                 random.shuffle(batches)
                 for i, batch in enumerate(tqdm(batches, total=len(batches), desc="step")):
 
@@ -333,15 +334,16 @@ def split_file(src_data_path: str, split_size=1000, data_dir='tmp_data/'):
             content_list = pickle.load(f)
             length = len(content_list)
             size += length
+        random.shuffle(content_list)
         for start in range(0, length, split_size):
             end = start + split_size if start + split_size <= length else length
             cur = content_list[start: end]
             if end != length:
                 with open(data_dir + name + str(count), 'wb') as f:
                     pickle.dump(cur, f)
+                    count += 1
             else:
-                test_batches = DataLoader.process_data(cur)
-            count += 1
+                test_batches += DataLoader.process_data(cur)
     return size
 
 
