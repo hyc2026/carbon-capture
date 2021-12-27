@@ -413,7 +413,7 @@ def main():
     data_list = data_list_1 + data_list_2   
     #open(save_file_name, 'w').write(str(data_list))
     import pickle
-    with open("data" + save_file_name, 'wb') as f:
+    with open("data/data" + save_file_name, 'wb') as f:
         pickle.dump(data_list, f)
 
 if __name__ == "__main__":
