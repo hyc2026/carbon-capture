@@ -317,33 +317,45 @@ def read_train_data_pickle(data_path):
     return read_data  
 
 
-def split_file(content_list: list, split_size=1000, data_dir='tmp_data/'):
+def split_file(src_data_path: str, split_size=1000, data_dir='tmp_data/'):
     count = 1
     name = 'data'
-    length = len(content_list)
+    size = 0
+    if os.path.isdir(src_data_path):
+        file_name_list = os.listdir(src_data_path)
+        file_name_list = [os.path.join(src_data_path, _) for _ in file_name_list]
+    else:
+        file_name_list = [src_data_path]
+    # length = len(content_list)
     global test_batches
-    for start in range(0, length, split_size):
-        end = start + split_size if start + split_size <= length else length
-        cur = content_list[start: end]
-        if end != length:
-            with open(data_dir + name + str(count), 'wb') as f:
-                pickle.dump(cur, f)
-        else:
-            test_batches = DataLoader.process_data(cur)
-        count += 1
+    for eve_file in file_name_list:
+        with open(eve_file, 'rb') as f:
+            content_list = pickle.load(f)
+            length = len(content_list)
+            size += length
+        for start in range(0, length, split_size):
+            end = start + split_size if start + split_size <= length else length
+            cur = content_list[start: end]
+            if end != length:
+                with open(data_dir + name + str(count), 'wb') as f:
+                    pickle.dump(cur, f)
+            else:
+                test_batches = DataLoader.process_data(cur)
+            count += 1
+    return size
 
 
 if __name__ == '__main__':
     import random
     random.seed(2021)
-    data_path = "data1"
+    data_path = "data"
     train_batches = []
     test_batches = []
-    read_data = read_train_data_pickle(data_path)
+    # read_data = read_train_data_pickle(data_path)
     # read_data = eval(open('datasets_200.txt', 'r').read())
     data_directory = 'tmp_data/'
-    split_file(read_data, split_size=1500, data_dir=data_directory)
-    logger.info(f"preprocessing: data count {len(read_data)}")
+    data_num = split_file(data_path, split_size=1500, data_dir=data_directory)
+    logger.info(f"preprocessing: data count {data_num}")
     # batches = data_loader.process_data(read_data)
     # logger.info(f"preprocess finish: batches count {len(batches)}")
     # random.shuffle(batches)
@@ -351,7 +363,7 @@ if __name__ == '__main__':
     # train_batches = batches[:trian_size]
     # eval_batches = batches[trian_size:]
 
-    logger.info(f"train batches count: {len(train_batches)} eval batches count: {len(test_batches)}")
+    logger.info(f"train batches count: {data_num - len(test_batches)} eval batches count: {len(test_batches)}")
     model.train(train_batches, epoch=30, eval_batches=test_batches, eval_per_epoch=2, data_dir=data_directory)
     
     # cur = batches[0][0][20:25], batches[0][1][20:25], batches[0][2][20:25]
