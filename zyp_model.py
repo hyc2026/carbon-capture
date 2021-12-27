@@ -14,6 +14,8 @@ from zerosum_env.envs.carbon.helpers import \
 from tqdm import tqdm
 from submission import ObservationParser
 import pickle
+import os
+
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
@@ -93,7 +95,8 @@ class DataLoader:
     def __init__(self):
         pass
 
-    def process_data(self, data: list, batch_size=256):
+    @staticmethod
+    def process_data(data: list, batch_size=256):
         final_batches = []
         middle_data = []
         labels = []
@@ -145,8 +148,6 @@ class DataLoader:
         return final_batches
 
 
-
-
 class ActionImitation:
     def __init__(self, device='cuda:0', lr=1e-3) -> None:
         if 'cuda' in device and not torch.cuda.is_available():
@@ -158,8 +159,6 @@ class ActionImitation:
         self.optimizer = torch.optim.AdamW(self.model.parameters(), lr=lr)
         self.total = 0
         self.losses = tensor(0).float().to(self.device)
-        
-
 
     def update_loss(self, loss, batch_size):
         self.total += batch_size
@@ -171,44 +170,57 @@ class ActionImitation:
         self.total = 0
         self.losses = tensor(0).float()
 
-
-
-    def train(self, batches: list, epoch=22, eval_batches=None, eval_per_epoch = 1):
+    def train(self, batches=None, epoch=22, eval_batches=None, eval_per_epoch=1, data_dir=None):
         # 每个batch是两个list，feature_list和target_list
-        
         model = self.model
         optimizer = self.optimizer
         loss_func = func.cross_entropy
         best_eval_result = 0
         step_per_epoch = len(batches)
-        #eval_steps = [int(len(batches) / eval_per_epoch * i) for i in range(eval_per_epoch)]
+        model.train()
+        # eval_steps = [int(len(batches) / eval_per_epoch * i) for i in range(eval_per_epoch)]
+        cur_index = 1
+        flag = 0
         for e in tqdm(range(epoch + 1), desc="epochs"):
             self.resume()
-            for i, batch in enumerate(tqdm(batches, total=len(batches), desc="step")):
-                model.train()
-                feature, target, _ = batch
-                feature = tensor(feature).float()
-                target = tensor(target)
-                
-                feature = feature.to(self.device)
-                target = target.to(self.device)
+            while 1:
+                if data_dir is not None:
+                    cur_name = data_dir.strip('/') + '/' + str(cur_index)
+                    if os.path.exists(cur_name):
+                        with open(cur_name) as f:
+                            batches = pickle.load(f)
+                            flag = 1
+                    else:
+                        break
+                if batches is None:
+                    break
+                for i, batch in enumerate(tqdm(batches, total=len(batches), desc="step")):
 
-                logits = model(feature)
-                loss = loss_func(logits, target)
+                    feature, target, _ = batch
+                    feature = tensor(feature).float()
+                    target = tensor(target)
 
-                loss.backward()
-                optimizer.step()
-                #scheduler.step()
-                optimizer.zero_grad()
-                self.update_loss(loss, batch_size=len(batch))
+                    feature = feature.to(self.device)
+                    target = target.to(self.device)
+
+                    logits = model(feature)
+                    loss = loss_func(logits, target)
+
+                    loss.backward()
+                    optimizer.step()
+                    # scheduler.step()
+                    optimizer.zero_grad()
+                    self.update_loss(loss, batch_size=len(batch))
                 if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
                     eval_result = self.eval(eval_batches)
                     logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
                     if eval_result > best_eval_result:
                         best_eval_result = eval_result
                         self.save('models/best')
-            logger.info(f"epoch loss: {self.ans.item()}")
-            self.save('models/epoch_' + str(e))
+                logger.info(f"epoch loss: {self.ans.item()}")
+                self.save('models/epoch_' + str(e))
+                if flag == 0:
+                    break
 
     def save(self, filename):
         torch.save(self.model.state_dict(), filename)
@@ -236,8 +248,6 @@ class ActionImitation:
             correct += (predict == label).sum().item()
             total += len(batch)
         return correct / total
-
-
 
     # 只输入一个batch，就是当前的环境
     def predict(self, batch):
@@ -289,8 +299,8 @@ def agent(obs, configuration):
         commands.pop(eve)
     return commands
 
+
 def read_train_data_pickle(data_path):
-    import os
     if os.path.isdir(data_path):
         file_name_list = os.listdir(data_path)
         file_name_list = [os.path.join(data_path, _) for _ in file_name_list]
@@ -302,23 +312,42 @@ def read_train_data_pickle(data_path):
             read_data.extend(pickle.load(f))
     return read_data  
 
+
+def split_file(content_list: list, split_size=1000, data_dir='tmp_data/'):
+    count = 1
+    length = len(content_list)
+    global test_batches
+    for start in range(0, length, split_size):
+        end = start + split_size if start + split_size <= length else length
+        cur = content_list[start: end]
+        if end != length:
+            with open(data_dir + str(count), 'wb') as f:
+                pickle.dump(cur, f)
+        else:
+            test_batches = DataLoader.process_data(cur)
+        count += 1
+
+
 if __name__ == '__main__':
     import random
     random.seed(2021)
-    data_path = "data_10.pk"
+    data_path = "data1"
+    train_batches = []
+    test_batches = []
     read_data = read_train_data_pickle(data_path)
-    #read_data = eval(open('datasets_200.txt', 'r').read())
-    
+    # read_data = eval(open('datasets_200.txt', 'r').read())
+    data_directory = 'tmp_data/'
+    split_file(read_data, data_dir=data_directory)
     logger.info(f"preprocessing: data count {len(read_data)}")
-    batches = data_loader.process_data(read_data)
-    logger.info(f"preprocess finish: batches count {len(batches)}")
-    
-    random.shuffle(batches)
-    trian_size = int(len(batches) * 0.9)
-    train_batches = batches[:trian_size]
-    eval_batches = batches[trian_size:]
+    # batches = data_loader.process_data(read_data)
+    # logger.info(f"preprocess finish: batches count {len(batches)}")
+    # random.shuffle(batches)
+    # trian_size = int(len(batches) * 0.9)
+    # train_batches = batches[:trian_size]
+    # eval_batches = batches[trian_size:]
+
     logger.info(f"train batches count: {len(train_batches)} eval batches count: {len(eval_batches)}")
-    model.train(train_batches, epoch=30, eval_batches=eval_batches, eval_per_epoch=2)
+    model.train(train_batches, epoch=30, eval_batches=test_batches, eval_per_epoch=2, data_dir=data_directory)
     # cur = batches[0][0][20:25], batches[0][1][20:25], batches[0][2][20:25]
     # print(cur[1], cur[2])
     # print(model.predict(cur))
