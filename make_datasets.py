@@ -1,5 +1,5 @@
 from functools import total_ordering
-from datasets_make.daisheng_policy_1223 import MyPolicy as daishengPolicy
+from datasets_make.final_jds_1228 import MyPolicy as daishengPolicy
 import sys
 from zerosum_env import make, evaluate
 from zerosum_env.envs.carbon.helpers import *
@@ -24,7 +24,7 @@ WorkerDirections = np.stack([np.array((0, 0)),
                              np.array((0, 1)),
                              np.array((1, 0)),
                              np.array((0, -1)),
-                             np.array((-1, 0))])  # 与WorkerActions相对应
+                             np.array((-1, 0))])
 
 def one_hot_np(value: int, num_cls: int):
     ret = np.zeros(num_cls)
@@ -292,6 +292,12 @@ def run_one_episode(collectPolicy, oppoPolicy="random"):
     oppoPolicy_reward = rewards[1]
     
     collect_records = collectPolicy.record_list
+    #for i in range(10):
+    #    masked = np.array(collect_records[i][3])
+    #    for x, y in zip(np.where(masked==1)[0], np.where(masked==1)[1]):
+    #        print(x, y)
+    #    print("============")
+    #exit(0)
     return collect_records
 
 Action2ID = {
@@ -389,7 +395,9 @@ def collect_data(collectPolicy, oppoPolicy="random", episode_count=1):
     ob_parser = ObservationParser()
     for _ in tqdm(range(episode_count), total=episode_count):
         run_records = run_one_episode(collectPolicy, oppoPolicy)
-        for overall_action, current_obs, previous_obs in run_records:
+        for overall_action, current_obs, previous_obs, masked_map in run_records:
+            # masked_map is a 15 * 15 list, masked_map[i][j] = 1 indicates position (i,j) has been viewed
+            # TODO: add masked_map to model feature
             local_obs, dones, available_actions = ob_parser.obs_transform(current_obs, previous_obs)
            
             label_agent2action = trans_policy_result(overall_action)
@@ -407,12 +415,16 @@ def main():
     collectPolicy = daishengPolicy()
 
     # oppoPolicy = "random"
+    data_list_1 = []
     # data_list_1 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
     oppoPolicy = daishengPolicy()
     data_list_2 = collect_data(collectPolicy, oppoPolicy, episode_count)
     data_list = data_list_1 + data_list_2   
     #open(save_file_name, 'w').write(str(data_list))
     import pickle
+    import os
+    if not os.path.exists('data'):
+        os.mkdir('data')
     with open("data/data" + save_file_name, 'wb') as f:
         pickle.dump(data_list, f)
 
