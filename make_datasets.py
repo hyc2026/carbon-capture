@@ -338,7 +338,7 @@ def trans_policy_result(policy_result):
         agent2action[agent_id] = action2id(agent_id, action)
     return agent2action
 
-def transfer_ob_feature_to_model_feature(ob_result, label_agent2action=None):
+def transfer_ob_feature_to_model_feature(ob_result, label_agent2action=None, masked_map=None):
 
     map_feature = {}
     agent_info = []
@@ -379,6 +379,7 @@ def transfer_ob_feature_to_model_feature(ob_result, label_agent2action=None):
         map_feature["tree_feature"] = tree_feature
         map_feature["action_feature"] = action_feature
         map_feature["my_base_distance_feature"] = my_base_distance_feature
+        map_feature["masked_map"] = masked_map
 
         agent_info.append((
             agent_id,
@@ -396,12 +397,9 @@ def collect_data(collectPolicy, oppoPolicy="random", episode_count=1):
     for _ in tqdm(range(episode_count), total=episode_count):
         run_records = run_one_episode(collectPolicy, oppoPolicy)
         for overall_action, current_obs, previous_obs, masked_map in run_records:
-            # masked_map is a 15 * 15 list, masked_map[i][j] = 1 indicates position (i,j) has been viewed
-            # TODO: add masked_map to model feature
             local_obs, dones, available_actions = ob_parser.obs_transform(current_obs, previous_obs)
-           
             label_agent2action = trans_policy_result(overall_action)
-            map_features, agent_info = transfer_ob_feature_to_model_feature(local_obs, label_agent2action)
+            map_features, agent_info = transfer_ob_feature_to_model_feature(local_obs, label_agent2action, masked_map)
             item = {
                 "map_features": map_features,
                 "agent_info": agent_info
