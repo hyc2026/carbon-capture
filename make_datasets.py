@@ -419,14 +419,13 @@ def main():
     # data_list_1 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
     oppoPolicy = daishengPolicy()
     data_list_2 = collect_data(collectPolicy, oppoPolicy, episode_count)
-    data_list = data_list_1 + data_list_2   
-    #open(save_file_name, 'w').write(str(data_list))
+    # data_list = data_list_1 + data_list_2   
     import pickle
     import os
     if not os.path.exists('data'):
         os.mkdir('data')
     with open("data/data" + save_file_name, 'wb') as f:
-        pickle.dump(data_list, f)
+        pickle.dump(data_list_2, f)
 
 if __name__ == "__main__":
     main()
