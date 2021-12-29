@@ -12,7 +12,7 @@ try:
     NUM_EPISODES = int(sys.argv[1])
 except IndexError as e:
     print("没有指定测评轮数，使用默认值50")
-    NUM_EPISODES = 50
+    NUM_EPISODES = 3
 
 # 计算从start到现在花费的时间
 def time_cost(start):
@@ -42,7 +42,7 @@ if __name__ == '__main__':
     def evaluate_agent():
         rew, _, _, _ = evaluate(
             "carbon",
-            agents=[agent, "random"],
+            agents=["random", agent],
             configuration={"randomSeed": 1},
             debug=True,
             num_episodes=NUM_EPISODES)  # default == 1
