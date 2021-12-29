@@ -533,6 +533,7 @@ def safety_detect(commands: Dict[str, WorkerAction or RecrtCenterAction], obs: B
     positions = {}
     danger_zones = {}
     current_player_id = obs.current_player_id
+    new_commands = {}
     for rec_id in centers:
         if centers[rec_id].player_id == current_player_id:
             positions[rec_id] = centers[rec_id].position
@@ -561,11 +562,13 @@ def safety_detect(commands: Dict[str, WorkerAction or RecrtCenterAction], obs: B
             if cur_action is not None:
                 if positions[cur_agent_id] in danger_zones:
                     if danger_zones[cur_pos] >= 1:
-                        commands[cur_agent_id] = None
+                        new_commands[cur_agent_id] = None
                     else:
                         danger_zones[cur_pos] += 1
+                        new_commands[cur_agent_id] = cur_action
                 else:
                     danger_zones[cur_pos] = 1
+                    new_commands[cur_agent_id] = cur_action
         else:
 
             copy_action_list = copy.deepcopy(WorkerActions)
@@ -598,8 +601,8 @@ def safety_detect(commands: Dict[str, WorkerAction or RecrtCenterAction], obs: B
                 danger_zones[new_pos] = 1
             # if final_action != cur_action:
             #     print(final_action, cur_action, cur_agent_id)
-            commands[cur_agent_id] = final_action
-    return commands
+            new_commands[cur_agent_id] = final_action
+    return new_commands
 
 
 # 只输入一个batch，就是当前的环境

@@ -356,6 +356,7 @@ class MyPolicy:
     def __init__(self):
         self.obs_parser = ObservationParser()
         self.actor_model = Model(is_actor=True)
+        self.previous_obs = None
 
     def take_action(self, observation, configuration):
         current_obs = Board(observation, configuration)

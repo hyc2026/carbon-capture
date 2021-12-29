@@ -338,9 +338,11 @@ def safety_detect(commands: Dict[str, WorkerAction or RecrtCenterAction], obs: B
                     danger_zones[eve_pos] += 0.5
 
     agents = list(commands.keys())
+    print(agents)
     import random
     # 目的是每轮中，agent的优先级都不一样
     random.shuffle(agents)
+    print(agents)
     for cur_agent_id in agents:
         cur_action = commands[cur_agent_id]
         cur_pos = positions[cur_agent_id]
@@ -386,6 +388,7 @@ def safety_detect(commands: Dict[str, WorkerAction or RecrtCenterAction], obs: B
             # if final_action != cur_action:
             #     print(final_action, cur_action, cur_agent_id)
             commands[cur_agent_id] = final_action
+    # print(danger_zones)
     return commands
 
 
