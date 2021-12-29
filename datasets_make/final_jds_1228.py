@@ -1,6 +1,6 @@
 import copy
 import numpy as np
-
+import logging
 import random
 from abc import abstractmethod
 
@@ -10,7 +10,10 @@ from zerosum_env.envs.carbon.helpers import (Board, Cell, Collector, Planter,
                                              RecrtCenterAction, WorkerAction)
 
 from typing import Tuple, Dict, List
-
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # TODO: 大问题： 任务基地闪烁
 
@@ -1088,6 +1091,7 @@ class MyPolicy:
         self.reset_record()
 
     def take_action(self, observation, configuration):
+        self.recover_global()
         global attacker_sum
         attacker_sum = 0
         current_obs = Board(observation, configuration)
@@ -1110,10 +1114,31 @@ class MyPolicy:
         # agent_obs_dict, dones, available_actions_dict = self.obs_parser.obs_transform(current_obs, previous_obs)
         self.record_list.append((overall_action, copy.deepcopy(new_obs), previous_obs, masked_map))
         self.previous_obs = copy.deepcopy(current_obs)
+        self.save_global()
         return overall_action
 
     def reset_record(self):
         self.record_list = []
+        self.attacker_sum = 0
+        self.gl_cells = None
+        self.viewed = {}
+        self.overall_plan = dict()
+
+
+    def recover_global(self):
+        global attacker_sum, gl_cells, viewed, overall_plan
+        attacker_sum = self.attacker_sum
+        gl_cells = self.gl_cells
+        viewed = self.viewed
+        overall_plan = self.overall_plan
+
+    def save_global(self):
+        global attacker_sum, gl_cells, viewed, overall_plan
+        self.attacker_sum = attacker_sum
+        self.gl_cells = gl_cells
+        self.viewed = viewed
+        self.overall_plan = overall_plan     
+
 
 my_policy = MyPolicy()
 

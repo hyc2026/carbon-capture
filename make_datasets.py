@@ -275,29 +275,38 @@ class ObservationParser:
         return local_obs, dones, available_actions
 
 
-def run_one_episode(collectPolicy, oppoPolicy="random"):
-
-    collectPolicy.reset_record()
+def run_one_episode(player1Policy, player2Policy="random"):
+    try:
+        player1Policy.reset_record()
+    except:
+        pass
+    try:
+        player2Policy.reset_record()
+    except:
+        pass
     e = make(environment="carbon", 
              configuration={"randomSeed": random.randint(1,2147483646)},
              steps=[],
              debug=False,
              state=None)
-    
-    oppoPolicy_action = "random" if oppoPolicy == "random" else oppoPolicy.take_action
-    agents = [collectPolicy.take_action, oppoPolicy_action]
+    player1Policy_action = "random" if player1Policy == "random" else player1Policy.take_action
+    player2Policy_action = "random" if player2Policy == "random" else player2Policy.take_action
+    agents = [player1Policy_action, player2Policy_action]
     last_state = e.run(agents)[-1]
     rewards = [state.reward for state in last_state]
-    collectPolicy_reward = rewards[0]
-    oppoPolicy_reward = rewards[1]
-    
-    collect_records = collectPolicy.record_list
-    #for i in range(10):
-    #    masked = np.array(collect_records[i][3])
-    #    for x, y in zip(np.where(masked==1)[0], np.where(masked==1)[1]):
-    #        print(x, y)
-    #    print("============")
-    #exit(0)
+    player1Policy_reward = rewards[0]
+    player2Policy_reward = rewards[1]
+    if player1Policy_reward >= player2Policy_reward:
+        try:
+            collect_records = player1Policy.record_list
+        except:
+            collect_records = player2Policy.record_list
+    else:
+        try:
+            collect_records = player2Policy.record_list
+        except:
+            collect_records = player1Policy.record_list
+
     return collect_records
 
 Action2ID = {
@@ -391,11 +400,11 @@ def transfer_ob_feature_to_model_feature(ob_result, label_agent2action=None, mas
         ))
     return map_feature, agent_info
 
-def collect_data(collectPolicy, oppoPolicy="random", episode_count=1):
+def collect_data(player1Policy, player2Policy="random", episode_count=1):
     data_list = []
     ob_parser = ObservationParser()
     for _ in tqdm(range(episode_count), total=episode_count):
-        run_records = run_one_episode(collectPolicy, oppoPolicy)
+        run_records = run_one_episode(player1Policy, player2Policy)
         for overall_action, current_obs, previous_obs, masked_map in run_records:
             local_obs, dones, available_actions = ob_parser.obs_transform(current_obs, previous_obs)
             label_agent2action = trans_policy_result(overall_action)
@@ -410,20 +419,26 @@ def collect_data(collectPolicy, oppoPolicy="random", episode_count=1):
 def main():
     save_file_name = sys.argv[1]
     episode_count = int(sys.argv[2])
-    collectPolicy = daishengPolicy()
+    candidate_player_pairs = [
+        (daishengPolicy(), "random", 0.25),
+        ("random", daishengPolicy(), 0.25),
+        (daishengPolicy(), daishengPolicy(), 0.25),
+        (daishengPolicy(), daishengPolicy(), 0.25)
+    ]
+    all_collect_data_list = []
+    for player1, player2, p in candidate_player_pairs:
+        cur_episode_count = int(p * episode_count)
+        if cur_episode_count <= 0:
+            continue
+        data_list = collect_data(player1, player2, cur_episode_count)
+        all_collect_data_list.extend(data_list)
 
-    # oppoPolicy = "random"
-    # data_list_1 = []
-    # data_list_1 = collect_data(collectPolicy, oppoPolicy, int(episode_count / 2))
-    oppoPolicy = daishengPolicy()
-    data_list_2 = collect_data(collectPolicy, oppoPolicy, episode_count)
-    # data_list = data_list_1 + data_list_2   
     import pickle
     import os
     if not os.path.exists('data'):
         os.mkdir('data')
     with open("data/data" + save_file_name, 'wb') as f:
-        pickle.dump(data_list_2, f)
+        pickle.dump(all_collect_data_list, f)
 
 if __name__ == "__main__":
     main()
