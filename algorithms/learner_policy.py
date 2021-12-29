@@ -94,14 +94,18 @@ class LearnerPolicy(BasePolicy):
         :param model_dict: (dict) State dict of models and optimizers.
         :param strict: (bool, optional) whether to strictly enforce the keys of torch models
         """
-        self.actor_model.load_state_dict(model_dict['actor'], strict=strict)
-        self.actor_optimizer.load_state_dict(model_dict['actor_optimizer'])
+        if 'actor' not in model_dict:
+            self.actor_model.load_state_dict(model_dict)
+            self.actor_model.to(self.device)
+        else:
+            self.actor_model.load_state_dict(model_dict['actor'], strict=strict)
+            self.actor_optimizer.load_state_dict(model_dict['actor_optimizer'])
 
-        self.critic_model.load_state_dict(model_dict['critic'], strict=strict)
-        self.critic_optimizer.load_state_dict(model_dict['critic_optimizer'])
+            self.critic_model.load_state_dict(model_dict['critic'], strict=strict)
+            self.critic_optimizer.load_state_dict(model_dict['critic_optimizer'])
 
-        self.actor_model.to(self.device)
-        self.critic_model.to(self.device)
+            self.actor_model.to(self.device)
+            self.critic_model.to(self.device)
 
     def evaluate_actions(self, observation, action, available_actions=None):
         """

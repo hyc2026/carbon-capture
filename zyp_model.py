@@ -221,9 +221,9 @@ class ActionImitation:
                 logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
                 if eval_result > best_eval_result:
                     best_eval_result = eval_result
-                    self.save('models/best')
+                    self.save('models/model_best.pth')
                 logger.info(f"epoch loss: {self.ans.item()}")
-                self.save('models/epoch_' + str(e))
+                self.save('models/model_' + str(e) + '.pth')
                 if flag == 0:
                     break
 

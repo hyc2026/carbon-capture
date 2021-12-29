@@ -47,7 +47,9 @@ pip install -r requirements.txt
 # CUDA 10.0 (DGX-01)
 conda install pytorch==1.7.1  cudatoolkit=9.2 -c pytorch
 # if CUDA 10.1
-# conda install pytorch==1.7.0  cudatoolkit=10.1 -c pytorch
+conda install pytorch==1.7.0  cudatoolkit=10.1 -c pytorch
+# cpu
+conda install pytorch==1.7.1  cudatoolkit=9.2 torchaudio cpuonly -c pytorch
 ```
 
 

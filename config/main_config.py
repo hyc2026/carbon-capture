@@ -13,12 +13,12 @@ config = dict(
         experient_name='runs',
         n_threads=8,  # 并行进程数
         seed=42,
-        training_from_scratch=True,  # False
+        training_from_scratch=False,  # False
     ),
     runner=dict(  # 训练配置项
         episodes=2000,
         episode_length=300,
-        save_interval=10,  # 多少个epoch保存下模型
+        save_interval=1,  # 多少个epoch保存下模型
         buffer_size=20000,
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         policy=dict(  # 训练策略参数

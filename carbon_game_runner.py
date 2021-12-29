@@ -312,6 +312,6 @@ class CarbonGameRunner:
 
         model_dict = torch.load(str(model_path), map_location=self.device)
 
-        self.start_episode = int(model_dict['episode']) + 1  # specifies the next episode for training
+        self.start_episode = int(model_dict['episode']) + 1 if 'episode' in model_dict else 0
 
         self.learner_policy.restore(model_dict, strict)
