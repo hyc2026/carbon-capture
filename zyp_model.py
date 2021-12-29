@@ -320,7 +320,7 @@ def read_train_data_pickle(data_path):
 
 def split_file(src_data_path: str, split_size=1000, data_dir='tmp_data/'):
     count = 1
-    name = 'data'
+    name = 'data_'
     size = 0
     if os.path.isdir(src_data_path):
         file_name_list = os.listdir(src_data_path)
