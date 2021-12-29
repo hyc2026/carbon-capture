@@ -15,11 +15,11 @@ class Model(nn.Module):
         gain = nn.init.calculate_gain('leaky_relu', 0.01)
 
         self.backbone = nn.Sequential(
-            init_(nn.Conv2d(13, 64, kernel_size=(3, 3), stride=(1, 1)), gain=gain),
+            init_(nn.Conv2d(13, 128, kernel_size=(3, 3), stride=(1, 1)), gain=gain),
             nn.LeakyReLU(negative_slope=0.01),
-            init_(nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), groups=64), gain=gain),
+            init_(nn.Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), groups=64), gain=gain),
             nn.LeakyReLU(negative_slope=0.01),
-            init_(nn.Conv2d(64, 64, kernel_size=(2, 2), stride=(2, 2)), gain=gain),
+            init_(nn.Conv2d(128, 64, kernel_size=(2, 2), stride=(2, 2)), gain=gain),
             nn.LeakyReLU(negative_slope=0.01),
             nn.Flatten(start_dim=1, end_dim=-1),
         )

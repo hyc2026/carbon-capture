@@ -219,6 +219,8 @@ class ActionImitation:
                 # if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
                 eval_result = self.eval(eval_batches)
                 logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
+                if not os.path.exists('models'):
+                    os.mkdir('models')
                 if eval_result > best_eval_result:
                     best_eval_result = eval_result
                     self.save('models/model_best.pth')
@@ -320,7 +322,7 @@ def read_train_data_pickle(data_path):
 
 def split_file(src_data_path: str, split_size=1000, data_dir='tmp_data/'):
     count = 1
-    name = 'data_'
+    name = 'data'
     size = 0
     if os.path.isdir(src_data_path):
         file_name_list = os.listdir(src_data_path)
@@ -329,6 +331,7 @@ def split_file(src_data_path: str, split_size=1000, data_dir='tmp_data/'):
         file_name_list = [src_data_path]
     # length = len(content_list)
     global test_batches
+    print(file_name_list)
     for eve_file in file_name_list:
         with open(eve_file, 'rb') as f:
             content_list = pickle.load(f)
@@ -344,6 +347,7 @@ def split_file(src_data_path: str, split_size=1000, data_dir='tmp_data/'):
                     count += 1
             else:
                 test_batches += DataLoader.process_data(cur)
+    print(count, size)
     return size
 
 
@@ -356,6 +360,8 @@ if __name__ == '__main__':
     # read_data = read_train_data_pickle(data_path)
     # read_data = eval(open('datasets_200.txt', 'r').read())
     data_directory = 'tmp_data/'
+    if not os.path.exists(data_directory):
+        os.mkdir(data_directory)
     data_num = split_file(data_path, split_size=1500, data_dir=data_directory)
     logger.info(f"preprocessing: data count {data_num}")
     # batches = data_loader.process_data(read_data)

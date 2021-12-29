@@ -7,3 +7,6 @@
 
 runs/
 tmp/
+data/
+tmp_data/
+models/

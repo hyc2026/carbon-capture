@@ -422,7 +422,7 @@ def main():
     import os
     if not os.path.exists('data'):
         os.mkdir('data')
-    with open("data/data_" + save_file_name, 'wb') as f:
+    with open("data/data" + save_file_name, 'wb') as f:
         pickle.dump(data_list_2, f)
 
 if __name__ == "__main__":
