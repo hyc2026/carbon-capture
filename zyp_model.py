@@ -1,5 +1,7 @@
 from copy import deepcopy
 from posixpath import commonpath
+from typing import Dict
+
 import torch
 from torch import tensor
 import torch.nn.functional as func
@@ -218,7 +220,7 @@ class ActionImitation:
                     self.update_loss(loss, batch_size=len(batch))
                 # if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
                 eval_result = self.eval(eval_batches)
-                logger.info(f"eval_result at epoch {e} step {i}: {eval_result} best result: {best_eval_result}")
+                logger.info(f"eval_result at epoch {e}: {eval_result} best result: {best_eval_result}")
                 if not os.path.exists('models'):
                     os.mkdir('models')
                 if eval_result > best_eval_result:
@@ -271,12 +273,12 @@ class ActionImitation:
             if 'recrtCenter' in cur_id:
                 # 转化中心预测的结果只有三种
                 cur_choice = actions_probs[index][:3].argmax() 
-                cur_action =  BaseActions[cur_choice]
+                cur_action = BaseActions[cur_choice]
             else:
                 cur_choice = actions_probs[index].argmax()
                 cur_action = WorkerActions[cur_choice]
-            if cur_action:
-                cur_action = cur_action.name
+            # if cur_action:
+            #     cur_action = cur_action.name
             final_dict[cur_id] = cur_action
         return final_dict
 
@@ -291,6 +293,102 @@ except:
     pass
 
 
+def safety_detect(commands: Dict[str, WorkerAction or RecrtCenterAction], obs: Board) -> Dict[str, WorkerAction or RecrtCenterAction]:
+    def get_new_position(point1: Point, action: WorkerAction):
+        new_x = point1.x
+        new_y = point1.y
+        if action == WorkerAction.RIGHT:
+            new_x += 1
+        elif action == WorkerAction.LEFT:
+            new_x -= 1
+        if action == WorkerAction.UP:
+            new_y -= 1
+        elif action == WorkerAction.DOWN:
+            new_y += 1
+        new_x %= 15
+        new_y %= 15
+        return new_x, new_y
+
+    def get_cross(point1: Point):
+        return (point1.x, point1.y), \
+               ((point1.x + 1) % 15, point1.y), \
+               ((point1.x - 1) % 15, point1.y), \
+               (point1.x, (point1.y + 1) % 15), \
+               (point1.x, (point1.y - 1) % 15)
+
+    centers = obs.recrtCenters
+    positions = {}
+    danger_zones = {}
+    current_player_id = obs.current_player_id
+    for rec_id in centers:
+        if centers[rec_id].player_id == current_player_id:
+            positions[rec_id] = centers[rec_id].position
+
+    for worker_id in obs.workers:
+        cur_worker = obs.workers[worker_id]
+        if cur_worker.player_id == current_player_id:
+            positions[worker_id] = cur_worker.position
+        else:
+            # 用地方单位打一遍危险区，分值为0.5
+            cross_positions = get_cross(cur_worker.position)
+            for eve_pos in cross_positions:
+                if eve_pos not in danger_zones:
+                    danger_zones[eve_pos] = 0.5
+                else:
+                    danger_zones[eve_pos] += 0.5
+
+    agents = list(commands.keys())
+    import random
+    # 目的是每轮中，agent的优先级都不一样
+    random.shuffle(agents)
+    for cur_agent_id in agents:
+        cur_action = commands[cur_agent_id]
+        cur_pos = positions[cur_agent_id]
+        if 'recrtCenter' in cur_agent_id:
+            if cur_action is not None:
+                if positions[cur_agent_id] in danger_zones:
+                    if danger_zones[cur_pos] >= 1:
+                        commands[cur_agent_id] = None
+                    else:
+                        danger_zones[cur_pos] += 1
+                else:
+                    danger_zones[cur_pos] = 1
+        else:
+
+            copy_action_list = copy.deepcopy(WorkerActions)
+            random.shuffle(copy_action_list)
+            new_action_list = [cur_action]
+            for eve_action in copy_action_list:
+                if eve_action != cur_action:
+                    new_action_list.append(eve_action)
+            flag = 0
+            final_action = cur_action
+            # 优先选择危险区以外的
+            for eve_action in new_action_list:
+                new_pos = get_new_position(cur_pos, eve_action)
+                if new_pos not in danger_zones:
+                    final_action = eve_action
+                    flag = 1
+                    break
+            # 如果都在危险区，则选择0.5分一下的危险区执行
+            if flag == 0:
+                for eve_action in new_action_list:
+                    new_pos = get_new_position(cur_pos, eve_action)
+                    if danger_zones[new_pos] <= 0.5:
+                        final_action = eve_action
+                        break
+            # 更新危险区，选择最终action
+            new_pos = get_new_position(cur_pos, final_action)
+            if new_pos in danger_zones:
+                danger_zones[new_pos] += 1
+            else:
+                danger_zones[new_pos] = 1
+            # if final_action != cur_action:
+            #     print(final_action, cur_action, cur_agent_id)
+            commands[cur_agent_id] = final_action
+    return commands
+
+
 def agent(obs, configuration):
     obs = Board(obs, configuration)
     obs_parser = ObservationParser()
@@ -298,13 +396,19 @@ def agent(obs, configuration):
     cur_feature = transfer_ob_feature_to_model_feature(obs_feature)
     batch = data_loader.process_data([cur_feature])[0]
     commands = model.predict(batch)
-    del_list = []
-    for eve in commands:
-        if commands[eve] is None:
-            del_list.append(eve)
-    for eve in del_list:
-        commands.pop(eve)
-    return commands
+
+    # print_commands = {}
+    # for eve_id in commands:
+    #     if commands[eve_id] is not None:
+    #         print_commands[eve_id] = commands[eve_id].name
+    # print('过滤前:', print_commands)
+    commands_action = safety_detect(commands, obs)
+    final_commands = {}
+    for eve_id in commands_action:
+        if commands_action[eve_id] is not None:
+            final_commands[eve_id] = commands_action[eve_id].name
+    # print('过滤后:', final_commands)
+    return final_commands
 
 
 def read_train_data_pickle(data_path):
