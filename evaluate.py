@@ -6,8 +6,8 @@ from zerosum_env import evaluate
 from zerosum_env.envs.carbon.helpers import *
 from algorithms.planning_policy.planning_policy import PlanningPolicy
 from algorithms.eval_policy import EvalPolicy
-# from submission_model import agent
-from zyp_model import agent
+from submission_model import agent
+# from zyp_model import agent
 
 try:
     NUM_EPISODES = int(sys.argv[1])

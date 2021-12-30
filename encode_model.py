@@ -4,7 +4,7 @@ import torch
 
 
 if __name__ == "__main__":
-    model_path = "/home/zhangyp-s21/projects/carbon_baseline_cuda/models/best"  # your model file path
+    model_path = "runs\\run1\\models\\model_1.pth"  # your model file path
 
     model_state_dict = torch.load(model_path)
     # actor_model = model_state_dict['actor']
