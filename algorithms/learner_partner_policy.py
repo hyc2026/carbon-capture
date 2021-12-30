@@ -36,7 +36,10 @@ class LeanerPartnerPolicy(LearnerPolicy):
             self.model_path = random.choice(paths)
 
             state_dict = torch.load(self.model_path, map_location=self.device)
-            self.actor_model.load_state_dict(state_dict['actor'])
+            if 'actor' not in state_dict:
+                self.actor_model.load_state_dict(state_dict)
+            else:
+                self.actor_model.load_state_dict(state_dict['actor'])
             self.actor_model.eval()
 
     def can_sample_trajectory(self):

@@ -54,11 +54,39 @@ conda install pytorch==1.7.1  cudatoolkit=9.2 torchaudio cpuonly -c pytorch
 
 
 ## 训练
+
+### 生成数据
+使用make_datasets.py生成deeplearning预训练数据：
+
+make_datasets.sh中的两个参数分别是启动进程数和每个进程生成数据的轮数
+
+数据保存在data中
+
+```shell
+bash make_datasets.sh
+```
+
+### 预训练
+使用deeplearning进行预训练：
+```shell
+python zyp_model.py
+```
+生成的模型报讯在`runs/run1/models`中
+
+### 强化学习
 在 `config/main_config.py` 文件中修改超参数后并运行以下命令:
 ```shell
 python train.py
 ```
+程序默认在runs文件夹下寻找runi中i最大的文件夹(如run1), 并在models中寻找model_i.pth中i最大的模型(如model_0.pth)进行加载
+
 命令行上会输出相关的训练信息，也可以通过tensorboard查看
+
+### 提交
+将模型编码
+encode_model.py
+
+将生成的actor.txt替换submission_model.py里的model
 
 ## 验证
 在 evaluate.py 中修改你的模型加载路径后运行脚本来测试你的模型效果。

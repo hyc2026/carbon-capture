@@ -8,6 +8,7 @@ from algorithms.planning_policy.planning_policy import PlanningPolicy
 from algorithms.eval_policy import EvalPolicy
 from submission_model import agent
 # from zyp_model import agent
+import random
 
 try:
     NUM_EPISODES = int(sys.argv[1])
@@ -44,7 +45,7 @@ if __name__ == '__main__':
         rew, _, _, _ = evaluate(
             "carbon",
             agents=[agent, "random"],
-            configuration={"randomSeed": 1},
+            configuration={"randomSeed": random.randint(1,2147483646)},
             debug=True,
             num_episodes=NUM_EPISODES)  # default == 1
         # measure the mean of rewards of two agents

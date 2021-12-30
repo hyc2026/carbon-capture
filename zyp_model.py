@@ -221,13 +221,18 @@ class ActionImitation:
                 # if eval_batches and (i % int(step_per_epoch / eval_per_epoch) == 0 or i == step_per_epoch - 1):
                 eval_result = self.eval(eval_batches)
                 logger.info(f"eval_result at epoch {e}: {eval_result} best result: {best_eval_result}")
-                if not os.path.exists('models'):
-                    os.mkdir('models')
+                # 修改模型保存路径来适应rl
+                if not os.path.exists('runs'):
+                    os.mkdir('runs')
+                if not os.path.exists(os.path.join('runs', 'run1')):
+                    os.mkdir(os.path.join('runs', 'run1'))
+                if not os.path.exists(os.path.join('runs', 'run1', 'models')):
+                    os.mkdir(os.path.join('runs', 'run1', 'models'))
                 if eval_result > best_eval_result:
                     best_eval_result = eval_result
-                    self.save('models/model_best.pth')
+                    self.save(os.path.join('runs', 'run1', 'models', 'model_best.pth'))
                 logger.info(f"epoch loss: {self.ans.item()}")
-                self.save('models/model_' + str(e) + '.pth')
+                self.save(os.path.join('runs', 'run1', 'models', 'model_' + str(e) + '.pth'))
                 if flag == 0:
                     break
 
