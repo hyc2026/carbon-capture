@@ -7,7 +7,6 @@ from zerosum_env.envs.carbon.helpers import *
 import numpy as np
 import json
 from submission import ObservationParser
-import threading
 import time
 import os
 from tqdm import tqdm
@@ -443,9 +442,10 @@ def dummy_main(save_file_name,episode_count):
     with open("data/data" + save_file_name, 'wb') as f:
         pickle.dump(all_collect_data_list, f)
     
-def main():
+
+def main_multiprocessing():
     '''
-    each thread run dummy_main function. Create worker_count threads. when some thread exits, create a new one immediately.
+    each process run dummy_main function. Create worker_count processes. when some process exits, create a new one immediately.
     '''
     parser=argparse.ArgumentParser()
     parser.add_argument('--worker_count', type=int, default=8)
@@ -461,16 +461,16 @@ def main():
                 time.sleep(1)
             except:
                 print("warning: Error during making dataset,skipping")
-    threads = []
+    processes = []
     for i in range(args.worker_count):
-        t = threading.Thread(target=worker,kwargs={"worker_id":i,"episode_count":args.episode_count})
-        t.start()
-        threads.append(t)
-    for t in threads:
-        t.join()
+        p = multiprocessing.Process(target=worker,kwargs={"worker_id":i,"episode_count":args.episode_count})
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
 
 if __name__ == "__main__":
-    main()
+    main_multiprocessing()
         
 
 
