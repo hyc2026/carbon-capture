@@ -1,3 +1,4 @@
+import argparse
 from functools import total_ordering
 from datasets_make.final_jds_1228 import MyPolicy as daishengPolicy
 import sys
@@ -6,9 +7,13 @@ from zerosum_env.envs.carbon.helpers import *
 import numpy as np
 import json
 from submission import ObservationParser
+import threading
+import time
+import os
 from tqdm import tqdm
 import random
-
+import multiprocessing
+import os
 BaseActions = [None,
                RecrtCenterAction.RECCOLLECTOR,
                RecrtCenterAction.RECPLANTER]
@@ -294,8 +299,8 @@ def run_one_episode(player1Policy, player2Policy="random"):
     agents = [player1Policy_action, player2Policy_action]
     last_state = e.run(agents)[-1]
     rewards = [state.reward for state in last_state]
-    player1Policy_reward = rewards[0]
-    player2Policy_reward = rewards[1]
+    player1Policy_reward = rewards[0] or -1
+    player2Policy_reward = rewards[1] or -1
     if player1Policy_reward >= player2Policy_reward:
         try:
             collect_records = player1Policy.record_list
@@ -416,9 +421,7 @@ def collect_data(player1Policy, player2Policy="random", episode_count=1):
             data_list.append(item)
     return data_list
 
-def main():
-    save_file_name = sys.argv[1]
-    episode_count = int(sys.argv[2])
+def dummy_main(save_file_name,episode_count):
     candidate_player_pairs = [
         (daishengPolicy(), "random", 0.25),
         ("random", daishengPolicy(), 0.25),
@@ -439,6 +442,32 @@ def main():
         os.mkdir('data')
     with open("data/data" + save_file_name, 'wb') as f:
         pickle.dump(all_collect_data_list, f)
+    
+def main():
+    '''
+    each thread run dummy_main function. Create worker_count threads. when some thread exits, create a new one immediately.
+    '''
+    parser=argparse.ArgumentParser()
+    parser.add_argument('--worker_count', type=int, default=8)
+    parser.add_argument('--episode_count', type=int, default=50)
+    args=parser.parse_args()
+    if not os.path.exists('data'):
+        os.mkdir('data')
+    def worker(worker_id,episode_count):
+        while True:
+            try:
+                save_file_name = str(time.time()*args.worker_count+worker_id)
+                dummy_main(save_file_name,episode_count)
+                time.sleep(1)
+            except:
+                print("warning: Error during making dataset,skipping")
+    threads = []
+    for i in range(args.worker_count):
+        t = threading.Thread(target=worker,kwargs={"worker_id":i,"episode_count":args.episode_count})
+        t.start()
+        threads.append(t)
+    for t in threads:
+        t.join()
 
 if __name__ == "__main__":
     main()
